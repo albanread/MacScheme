@@ -1,5 +1,6 @@
 #import "app_delegate.h"
 #import <MetalKit/MetalKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -124,6 +125,64 @@ extern void gfx_set_host_view(void *ns_view);
 
 static AppDelegate *g_app_delegate = nil;
 
+typedef NS_ENUM(NSInteger, MacSchemePane) {
+    MacSchemePaneEditor = 0,
+    MacSchemePaneRepl = 1,
+    MacSchemePaneGraphics = 2,
+};
+
+typedef NS_ENUM(NSInteger, MacSchemeLayoutPreset) {
+    MacSchemeLayoutPresetCustom = 0,
+    MacSchemeLayoutPresetBalanced = 1,
+    MacSchemeLayoutPresetEditorRepl = 2,
+    MacSchemeLayoutPresetEditorGraphics = 3,
+    MacSchemeLayoutPresetFocusEditor = 4,
+    MacSchemeLayoutPresetFocusRepl = 5,
+    MacSchemeLayoutPresetFocusGraphics = 6,
+};
+
+static const CGFloat kMacSchemeBalancedMainRatio = 0.60;
+static const CGFloat kMacSchemeBalancedRightRatio = 0.525;
+static const CGFloat kMacSchemeEditorReplMainRatio = 0.68;
+static const CGFloat kMacSchemeEditorGraphicsMainRatio = 0.56;
+
+static CGFloat ClampSplitRatio(CGFloat ratio) {
+    if (ratio < 0.15) return 0.15;
+    if (ratio > 0.85) return 0.85;
+    return ratio;
+}
+
+static void MacSchemeDispatchSyncOnMain(dispatch_block_t block) {
+    if (!block) return;
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
+}
+
+static CGFloat FirstSplitSubviewExtent(NSSplitView *splitView) {
+    NSArray<NSView *> *subviews = splitView.subviews;
+    if (subviews.count < 2) return 0.0;
+    NSView *first = subviews.firstObject;
+    return splitView.isVertical ? first.frame.size.width : first.frame.size.height;
+}
+
+static NSArray<UTType *> *MacSchemeAllowedContentTypes(void) {
+    static NSArray<UTType *> *types = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSMutableArray<UTType *> *built = [NSMutableArray array];
+        for (NSString *ext in @[@"ss", @"scm", @"sls", @"sld", @"sch", @"txt"]) {
+            UTType *type = [UTType typeWithFilenameExtension:ext conformingToType:UTTypeText];
+            if (type) [built addObject:type];
+        }
+        if (UTTypePlainText) [built addObject:UTTypePlainText];
+        types = [built copy];
+    });
+    return types;
+}
+
 static NSString *MacSchemeHistoryPath(void) {
     NSString *appSupport = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
     NSString *dir = [appSupport stringByAppendingPathComponent:@"MacScheme"];
@@ -148,6 +207,20 @@ static void SavePersistedReplHistory(void) {
 
 static NSString *MacSchemeGraphicsBootstrapSource(void) {
     return @"(begin "
+           "(define macscheme-layout-set "
+           "  (foreign-procedure \"macscheme_layout_set\" (integer-64) integer-64)) "
+           "(define macscheme-layout-show-pane "
+           "  (foreign-procedure \"macscheme_layout_show_pane\" (integer-64) integer-64)) "
+           "(define macscheme-layout-hide-pane "
+           "  (foreign-procedure \"macscheme_layout_hide_pane\" (integer-64) integer-64)) "
+           "(define macscheme-layout-toggle-pane "
+           "  (foreign-procedure \"macscheme_layout_toggle_pane\" (integer-64) integer-64)) "
+           "(define macscheme-layout-reset "
+           "  (foreign-procedure \"macscheme_layout_reset\" () integer-64)) "
+           "(define macscheme-layout-current "
+           "  (foreign-procedure \"macscheme_layout_current\" () integer-64)) "
+           "(define macscheme-layout-pane-visible "
+           "  (foreign-procedure \"macscheme_layout_pane_visible\" (integer-64) integer-64)) "
            "(define macscheme-gfx-init "
            "  (foreign-procedure \"macscheme_gfx_init\" () void)) "
            "(define macscheme-gfx-screen "
@@ -383,6 +456,53 @@ static NSString *MacSchemeGraphicsBootstrapSource(void) {
            "    (gfx-line-pal-band 80 111 2 32 220 255) "
            "    (gfx-line-pal-band 112 143 2 255 32 220) "
            "    (gfx-flip))) "
+                        "(define (layout-symbol->id sym) "
+                        "  (case sym "
+                        "    ((balanced) 1) "
+                        "    ((editor-repl) 2) "
+                        "    ((editor-graphics) 3) "
+                        "    ((focus-editor) 4) "
+                        "    ((focus-repl) 5) "
+                        "    ((focus-graphics) 6) "
+                        "    (else 0))) "
+                        "(define (layout-id->symbol n) "
+                        "  (case n "
+                        "    ((1) 'balanced) "
+                        "    ((2) 'editor-repl) "
+                        "    ((3) 'editor-graphics) "
+                        "    ((4) 'focus-editor) "
+                        "    ((5) 'focus-repl) "
+                        "    ((6) 'focus-graphics) "
+                        "    (else 'custom))) "
+                        "(define (layout-pane->id pane) "
+                        "  (case pane "
+                        "    ((editor) 0) "
+                        "    ((repl) 1) "
+                        "    ((graphics) 2) "
+                        "    (else -1))) "
+                        "(define (layout-set! sym) "
+                        "  (let ((id (layout-symbol->id sym))) "
+                        "    (and (positive? id) (not (zero? (macscheme-layout-set id)))))) "
+                        "(define (layout-reset!) (not (zero? (macscheme-layout-reset)))) "
+                        "(define (layout-current) (layout-id->symbol (macscheme-layout-current))) "
+                        "(define (layout-pane-visible? pane) "
+                        "  (let ((id (layout-pane->id pane))) "
+                        "    (and (>= id 0) (not (zero? (macscheme-layout-pane-visible id)))))) "
+                        "(define (layout-show-pane! pane) "
+                        "  (let ((id (layout-pane->id pane))) "
+                        "    (and (>= id 0) (not (zero? (macscheme-layout-show-pane id)))))) "
+                        "(define (layout-hide-pane! pane) "
+                        "  (let ((id (layout-pane->id pane))) "
+                        "    (and (>= id 0) (not (zero? (macscheme-layout-hide-pane id)))))) "
+                        "(define (layout-toggle-pane! pane) "
+                        "  (let ((id (layout-pane->id pane))) "
+                        "    (and (>= id 0) (not (zero? (macscheme-layout-toggle-pane id)))))) "
+                        "(define (layout-visible-panes) "
+                        "  (let ((out '())) "
+                        "    (when (layout-pane-visible? 'editor) (set! out (append out '(editor)))) "
+                        "    (when (layout-pane-visible? 'repl) (set! out (append out '(repl)))) "
+                        "    (when (layout-pane-visible? 'graphics) (set! out (append out '(graphics)))) "
+                        "    out)) "
              "(define (macscheme-set-console-size! rows cols) "
              "  (putenv \"LINES\" (format \"~a\" rows)) "
              "  (putenv \"COLUMNS\" (format \"~a\" cols))) "
@@ -442,6 +562,23 @@ static NSMenuItem *AddMenuItem(NSMenu *menu, NSString *title, SEL action, NSStri
     [menu addItem:item];
     return item;
 }
+
+@interface AppDelegate ()
+@property (strong) NSSplitViewController *rightSplitController;
+@property (strong) NSSplitViewItem *editorSplitItem;
+@property (strong) NSSplitViewItem *rightSplitItem;
+@property (strong) NSSplitViewItem *graphicsSplitItem;
+@property (strong) NSSplitViewItem *replSplitItem;
+@property (assign) BOOL editorPaneVisible;
+@property (assign) BOOL replPaneVisible;
+@property (assign) BOOL graphicsPaneVisible;
+@property (assign) CGFloat savedMainSplitRatio;
+@property (assign) CGFloat savedRightSplitRatio;
+@property (assign) MacSchemeLayoutPreset currentLayoutPreset;
+- (BOOL)applyLayoutPreset:(MacSchemeLayoutPreset)preset;
+- (BOOL)setPane:(MacSchemePane)pane visible:(BOOL)visible;
+- (BOOL)isPaneVisible:(MacSchemePane)pane;
+@end
 
 @interface GraphicsPlaceholderView : NSView
 {
@@ -741,7 +878,248 @@ void macscheme_get_completions(const unsigned char *bytes, size_t len) {
     scheme_enqueue(SchemeRequestCompletions, (const char *)bytes, len);
 }
 
+int64_t macscheme_layout_set(int64_t preset) {
+    if (!g_app_delegate) return 0;
+    __block BOOL ok = NO;
+    MacSchemeDispatchSyncOnMain(^{
+        ok = [g_app_delegate applyLayoutPreset:(MacSchemeLayoutPreset)preset];
+    });
+    return ok ? 1 : 0;
+}
+
+int64_t macscheme_layout_show_pane(int64_t pane) {
+    if (!g_app_delegate) return 0;
+    __block BOOL ok = NO;
+    MacSchemeDispatchSyncOnMain(^{
+        ok = [g_app_delegate setPane:(MacSchemePane)pane visible:YES];
+    });
+    return ok ? 1 : 0;
+}
+
+int64_t macscheme_layout_hide_pane(int64_t pane) {
+    if (!g_app_delegate) return 0;
+    __block BOOL ok = NO;
+    MacSchemeDispatchSyncOnMain(^{
+        ok = [g_app_delegate setPane:(MacSchemePane)pane visible:NO];
+    });
+    return ok ? 1 : 0;
+}
+
+int64_t macscheme_layout_toggle_pane(int64_t pane) {
+    if (!g_app_delegate) return 0;
+    __block BOOL ok = NO;
+    MacSchemeDispatchSyncOnMain(^{
+        BOOL visible = [g_app_delegate isPaneVisible:(MacSchemePane)pane];
+        ok = [g_app_delegate setPane:(MacSchemePane)pane visible:!visible];
+    });
+    return ok ? 1 : 0;
+}
+
+int64_t macscheme_layout_reset(void) {
+    return macscheme_layout_set(MacSchemeLayoutPresetBalanced);
+}
+
+int64_t macscheme_layout_current(void) {
+    if (!g_app_delegate) return MacSchemeLayoutPresetCustom;
+    __block int64_t current = MacSchemeLayoutPresetCustom;
+    MacSchemeDispatchSyncOnMain(^{
+        current = g_app_delegate.currentLayoutPreset;
+    });
+    return current;
+}
+
+int64_t macscheme_layout_pane_visible(int64_t pane) {
+    if (!g_app_delegate) return 0;
+    __block BOOL visible = NO;
+    MacSchemeDispatchSyncOnMain(^{
+        visible = [g_app_delegate isPaneVisible:(MacSchemePane)pane];
+    });
+    return visible ? 1 : 0;
+}
+
 @implementation AppDelegate
+
+- (NSUInteger)visiblePaneCount {
+    NSUInteger count = 0;
+    if (self.editorPaneVisible) count++;
+    if (self.replPaneVisible) count++;
+    if (self.graphicsPaneVisible) count++;
+    return count;
+}
+
+- (BOOL)isPaneVisible:(MacSchemePane)pane {
+    switch (pane) {
+        case MacSchemePaneEditor: return self.editorPaneVisible;
+        case MacSchemePaneRepl: return self.replPaneVisible;
+        case MacSchemePaneGraphics: return self.graphicsPaneVisible;
+    }
+    return NO;
+}
+
+- (MacSchemeLayoutPreset)derivedLayoutPreset {
+    BOOL editor = self.editorPaneVisible;
+    BOOL repl = self.replPaneVisible;
+    BOOL graphics = self.graphicsPaneVisible;
+    if (editor && repl && graphics) return MacSchemeLayoutPresetBalanced;
+    if (editor && repl && !graphics) return MacSchemeLayoutPresetEditorRepl;
+    if (editor && !repl && graphics) return MacSchemeLayoutPresetEditorGraphics;
+    if (editor && !repl && !graphics) return MacSchemeLayoutPresetFocusEditor;
+    if (!editor && repl && !graphics) return MacSchemeLayoutPresetFocusRepl;
+    if (!editor && !repl && graphics) return MacSchemeLayoutPresetFocusGraphics;
+    return MacSchemeLayoutPresetCustom;
+}
+
+- (void)captureVisibleSplitRatios {
+    if (self.editorSplitItem && self.rightSplitItem && !self.editorSplitItem.isCollapsed && !self.rightSplitItem.isCollapsed) {
+        CGFloat width = self.splitViewController.splitView.bounds.size.width;
+        if (width > 1.0) {
+            self.savedMainSplitRatio = ClampSplitRatio(FirstSplitSubviewExtent(self.splitViewController.splitView) / width);
+        }
+    }
+    if (self.graphicsSplitItem && self.replSplitItem && !self.graphicsSplitItem.isCollapsed && !self.replSplitItem.isCollapsed) {
+        CGFloat height = self.rightSplitController.splitView.bounds.size.height;
+        if (height > 1.0) {
+            self.savedRightSplitRatio = ClampSplitRatio(FirstSplitSubviewExtent(self.rightSplitController.splitView) / height);
+        }
+    }
+}
+
+- (void)applyPaneVisibilityWithMainRatio:(CGFloat)mainRatio rightRatio:(CGFloat)rightRatio {
+    if (!self.editorPaneVisible && !self.replPaneVisible && !self.graphicsPaneVisible) {
+        self.editorPaneVisible = YES;
+    }
+
+    BOOL rightVisible = self.replPaneVisible || self.graphicsPaneVisible;
+    self.editorSplitItem.collapsed = !self.editorPaneVisible;
+    self.rightSplitItem.collapsed = !rightVisible;
+    self.graphicsSplitItem.collapsed = !self.graphicsPaneVisible;
+    self.replSplitItem.collapsed = !self.replPaneVisible;
+
+    [self.window layoutIfNeeded];
+    [self.splitViewController.view layoutSubtreeIfNeeded];
+    [self.rightSplitController.view layoutSubtreeIfNeeded];
+
+    if (self.editorPaneVisible && rightVisible) {
+        CGFloat width = self.splitViewController.splitView.bounds.size.width;
+        if (width > 1.0) {
+            [self.splitViewController.splitView setPosition:width * ClampSplitRatio(mainRatio) ofDividerAtIndex:0];
+        }
+    }
+    if (self.graphicsPaneVisible && self.replPaneVisible) {
+        CGFloat height = self.rightSplitController.splitView.bounds.size.height;
+        if (height > 1.0) {
+            [self.rightSplitController.splitView setPosition:height * ClampSplitRatio(rightRatio) ofDividerAtIndex:0];
+        }
+    }
+
+    [self.window layoutIfNeeded];
+}
+
+- (void)updateLayoutMenuState {
+    [NSApp.mainMenu update];
+}
+
+- (BOOL)applyLayoutPreset:(MacSchemeLayoutPreset)preset {
+    CGFloat mainRatio = self.savedMainSplitRatio > 0.0 ? self.savedMainSplitRatio : kMacSchemeBalancedMainRatio;
+    CGFloat rightRatio = self.savedRightSplitRatio > 0.0 ? self.savedRightSplitRatio : kMacSchemeBalancedRightRatio;
+
+    switch (preset) {
+        case MacSchemeLayoutPresetBalanced:
+            self.editorPaneVisible = YES;
+            self.replPaneVisible = YES;
+            self.graphicsPaneVisible = YES;
+            mainRatio = kMacSchemeBalancedMainRatio;
+            rightRatio = kMacSchemeBalancedRightRatio;
+            break;
+        case MacSchemeLayoutPresetEditorRepl:
+            self.editorPaneVisible = YES;
+            self.replPaneVisible = YES;
+            self.graphicsPaneVisible = NO;
+            mainRatio = kMacSchemeEditorReplMainRatio;
+            break;
+        case MacSchemeLayoutPresetEditorGraphics:
+            self.editorPaneVisible = YES;
+            self.replPaneVisible = NO;
+            self.graphicsPaneVisible = YES;
+            mainRatio = kMacSchemeEditorGraphicsMainRatio;
+            break;
+        case MacSchemeLayoutPresetFocusEditor:
+            self.editorPaneVisible = YES;
+            self.replPaneVisible = NO;
+            self.graphicsPaneVisible = NO;
+            break;
+        case MacSchemeLayoutPresetFocusRepl:
+            self.editorPaneVisible = NO;
+            self.replPaneVisible = YES;
+            self.graphicsPaneVisible = NO;
+            break;
+        case MacSchemeLayoutPresetFocusGraphics:
+            self.editorPaneVisible = NO;
+            self.replPaneVisible = NO;
+            self.graphicsPaneVisible = YES;
+            break;
+        default:
+            return NO;
+    }
+
+    self.savedMainSplitRatio = ClampSplitRatio(mainRatio);
+    self.savedRightSplitRatio = ClampSplitRatio(rightRatio);
+    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio];
+    self.currentLayoutPreset = preset;
+    [self updateLayoutMenuState];
+    return YES;
+}
+
+- (BOOL)setPane:(MacSchemePane)pane visible:(BOOL)visible {
+    if (pane < MacSchemePaneEditor || pane > MacSchemePaneGraphics) return NO;
+    if ([self isPaneVisible:pane] == visible) return YES;
+    if (!visible && [self visiblePaneCount] <= 1) return NO;
+
+    [self captureVisibleSplitRatios];
+    switch (pane) {
+        case MacSchemePaneEditor: self.editorPaneVisible = visible; break;
+        case MacSchemePaneRepl: self.replPaneVisible = visible; break;
+        case MacSchemePaneGraphics: self.graphicsPaneVisible = visible; break;
+    }
+
+    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio];
+    self.currentLayoutPreset = [self derivedLayoutPreset];
+    [self updateLayoutMenuState];
+    return YES;
+}
+
+- (void)selectLayoutPreset:(id)sender {
+    NSInteger tag = [sender respondsToSelector:@selector(tag)] ? [sender tag] : 0;
+    [self applyLayoutPreset:(MacSchemeLayoutPreset)tag];
+}
+
+- (void)toggleLayoutPane:(id)sender {
+    NSInteger tag = [sender respondsToSelector:@selector(tag)] ? [sender tag] : -1;
+    if (tag < MacSchemePaneEditor || tag > MacSchemePaneGraphics) return;
+    BOOL visible = [self isPaneVisible:(MacSchemePane)tag];
+    [self setPane:(MacSchemePane)tag visible:!visible];
+}
+
+- (void)resetLayout:(id)sender {
+    (void)sender;
+    [self applyLayoutPreset:MacSchemeLayoutPresetBalanced];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    if (menuItem.action == @selector(selectLayoutPreset:)) {
+        menuItem.state = (menuItem.tag == self.currentLayoutPreset) ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if (menuItem.action == @selector(toggleLayoutPane:)) {
+        BOOL visible = [self isPaneVisible:(MacSchemePane)menuItem.tag];
+        menuItem.state = visible ? NSControlStateValueOn : NSControlStateValueOff;
+        if (visible && [self visiblePaneCount] <= 1) {
+            return NO;
+        }
+        return YES;
+    }
+    return YES;
+}
 
 // ---------------------------------------------------------------------------
 // Scheme pthread entry point.
@@ -840,6 +1218,23 @@ static void *scheme_thread_entry(void *arg) {
     [editMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(editMenu, @"Copy", @selector(copy:), @"c", NSEventModifierFlagCommand, nil);
     AddMenuItem(editMenu, @"Paste", @selector(paste:), @"v", NSEventModifierFlagCommand, nil);
+
+    NSMenuItem *layoutRoot = [[NSMenuItem alloc] initWithTitle:@"Layout" action:nil keyEquivalent:@""];
+    [mainMenu addItem:layoutRoot];
+    NSMenu *layoutMenu = [[NSMenu alloc] initWithTitle:@"Layout"];
+    [layoutRoot setSubmenu:layoutMenu];
+    AddMenuItem(layoutMenu, @"Balanced", @selector(selectLayoutPreset:), @"1", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetBalanced;
+    AddMenuItem(layoutMenu, @"Editor + REPL", @selector(selectLayoutPreset:), @"2", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetEditorRepl;
+    AddMenuItem(layoutMenu, @"Editor + Graphics", @selector(selectLayoutPreset:), @"3", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetEditorGraphics;
+    AddMenuItem(layoutMenu, @"Focus Editor", @selector(selectLayoutPreset:), @"4", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetFocusEditor;
+    AddMenuItem(layoutMenu, @"Focus REPL", @selector(selectLayoutPreset:), @"5", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetFocusRepl;
+    AddMenuItem(layoutMenu, @"Focus Graphics", @selector(selectLayoutPreset:), @"6", NSEventModifierFlagCommand, self).tag = MacSchemeLayoutPresetFocusGraphics;
+    [layoutMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(layoutMenu, @"Show Editor", @selector(toggleLayoutPane:), @"e", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneEditor;
+    AddMenuItem(layoutMenu, @"Show REPL", @selector(toggleLayoutPane:), @"r", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneRepl;
+    AddMenuItem(layoutMenu, @"Show Graphics", @selector(toggleLayoutPane:), @"g", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneGraphics;
+    [layoutMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(layoutMenu, @"Reset Layout", @selector(resetLayout:), @"0", NSEventModifierFlagCommand, self);
 
     NSMenuItem *schemeRoot = [[NSMenuItem alloc] initWithTitle:@"Scheme" action:nil keyEquivalent:@""];
     [mainMenu addItem:schemeRoot];
@@ -950,32 +1345,36 @@ static void *scheme_thread_entry(void *arg) {
     // Register this pane as the host for the real BASIC graphics renderer.
     gfx_set_host_view((__bridge void *)graphicsView);
 
-    NSSplitViewController *rightSplit = [[NSSplitViewController alloc] init];
-    rightSplit.splitView.vertical = NO;
-    NSSplitViewItem *graphicsItem = [NSSplitViewItem splitViewItemWithViewController:graphicsVC];
-    NSSplitViewItem *replItem = [NSSplitViewItem splitViewItemWithViewController:replVC];
-    graphicsItem.minimumThickness = 180.0;
-    replItem.minimumThickness = 180.0;
-    [rightSplit addSplitViewItem:graphicsItem];
-    [rightSplit addSplitViewItem:replItem];
+    self.rightSplitController = [[NSSplitViewController alloc] init];
+    self.rightSplitController.splitView.vertical = NO;
+    self.graphicsSplitItem = [NSSplitViewItem splitViewItemWithViewController:graphicsVC];
+    self.replSplitItem = [NSSplitViewItem splitViewItemWithViewController:replVC];
+    self.graphicsSplitItem.minimumThickness = 180.0;
+    self.replSplitItem.minimumThickness = 180.0;
+    [self.rightSplitController addSplitViewItem:self.graphicsSplitItem];
+    [self.rightSplitController addSplitViewItem:self.replSplitItem];
 
     self.splitViewController.splitView.vertical = YES;
-    NSSplitViewItem *editorItem = [NSSplitViewItem splitViewItemWithViewController:editorVC];
-    NSSplitViewItem *rightItem = [NSSplitViewItem splitViewItemWithViewController:rightSplit];
-    editorItem.minimumThickness = 320.0;
-    rightItem.minimumThickness = 280.0;
-    [self.splitViewController addSplitViewItem:editorItem];
-    [self.splitViewController addSplitViewItem:rightItem];
+    self.editorSplitItem = [NSSplitViewItem splitViewItemWithViewController:editorVC];
+    self.rightSplitItem = [NSSplitViewItem splitViewItemWithViewController:self.rightSplitController];
+    self.editorSplitItem.minimumThickness = 320.0;
+    self.rightSplitItem.minimumThickness = 280.0;
+    [self.splitViewController addSplitViewItem:self.editorSplitItem];
+    [self.splitViewController addSplitViewItem:self.rightSplitItem];
 
     self.splitViewController.view.frame = NSMakeRect(0, 0, initialContentSize.width, initialContentSize.height);
-    rightSplit.view.frame = NSMakeRect(0, 0, initialContentSize.width * 0.4, initialContentSize.height);
+    self.rightSplitController.view.frame = NSMakeRect(0, 0, initialContentSize.width * 0.4, initialContentSize.height);
 
     self.window.contentViewController = self.splitViewController;
     [self.window setContentSize:initialContentSize];
     [self.window center];
     [self.window layoutIfNeeded];
-    [self.splitViewController.splitView setPosition:720.0 ofDividerAtIndex:0];
-    [rightSplit.splitView setPosition:420.0 ofDividerAtIndex:0];
+    self.savedMainSplitRatio = kMacSchemeBalancedMainRatio;
+    self.savedRightSplitRatio = kMacSchemeBalancedRightRatio;
+    self.editorPaneVisible = YES;
+    self.replPaneVisible = YES;
+    self.graphicsPaneVisible = YES;
+    [self applyLayoutPreset:MacSchemeLayoutPresetBalanced];
     [self.window makeKeyAndOrderFront:nil];
     [self.window orderFrontRegardless];
     [NSApp activateIgnoringOtherApps:YES];
@@ -1067,6 +1466,13 @@ static void *scheme_thread_entry(void *arg) {
     Sforeign_symbol("macscheme_gfx_screen_active", (void *)macscheme_gfx_screen_active);
     Sforeign_symbol("macscheme_gfx_buffer_width", (void *)macscheme_gfx_buffer_width);
     Sforeign_symbol("macscheme_gfx_buffer_height", (void *)macscheme_gfx_buffer_height);
+    Sforeign_symbol("macscheme_layout_set", (void *)macscheme_layout_set);
+    Sforeign_symbol("macscheme_layout_show_pane", (void *)macscheme_layout_show_pane);
+    Sforeign_symbol("macscheme_layout_hide_pane", (void *)macscheme_layout_hide_pane);
+    Sforeign_symbol("macscheme_layout_toggle_pane", (void *)macscheme_layout_toggle_pane);
+    Sforeign_symbol("macscheme_layout_reset", (void *)macscheme_layout_reset);
+    Sforeign_symbol("macscheme_layout_current", (void *)macscheme_layout_current);
+    Sforeign_symbol("macscheme_layout_pane_visible", (void *)macscheme_layout_pane_visible);
     ptr eval_string = Scall1(Stop_level_value(Sstring_to_symbol("eval")),
                              Scall1(Stop_level_value(Sstring_to_symbol("read")),
                                     Scall1(Stop_level_value(Sstring_to_symbol("open-input-string")),
@@ -1112,7 +1518,7 @@ static void *scheme_thread_entry(void *arg) {
 - (void)openEditorFile {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.title = @"Open Scheme File";
-    panel.allowedFileTypes = @[@"ss", @"scm", @"sls", @"sld", @"sch", @"txt"];
+    panel.allowedContentTypes = MacSchemeAllowedContentTypes();
     panel.allowsOtherFileTypes = YES;
     panel.canChooseFiles = YES;
     panel.canChooseDirectories = NO;
@@ -1166,7 +1572,7 @@ static void *scheme_thread_entry(void *arg) {
 - (void)saveEditorFileAs {
     NSSavePanel *panel = [NSSavePanel savePanel];
     panel.title = @"Save Scheme File As";
-    panel.allowedFileTypes = @[@"ss", @"scm", @"sls", @"sld", @"sch", @"txt"];
+    panel.allowedContentTypes = MacSchemeAllowedContentTypes();
 
     NSString *existingPath = CurrentEditorPath();
     if (existingPath) {

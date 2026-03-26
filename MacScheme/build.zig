@@ -76,6 +76,7 @@ pub fn build(b: *std.Build) void {
     exe.linkFramework("GameController");
     exe.linkFramework("CoreImage");
     exe.linkFramework("QuartzCore");
+    exe.linkFramework("UniformTypeIdentifiers");
 
     // Dynamic libraries required by Chez Scheme
     exe.linkSystemLibrary("iconv");
