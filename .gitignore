@@ -1,0 +1,61 @@
+# macOS / editor noise
+.DS_Store
+*.swp
+*.swo
+*~
+
+# VS Code workspace noise
+.vscode/
+
+# External trees not intended for this repo's first commit
+ChezScheme/
+FasterBASIC-public/
+
+# Local experiments not part of the app build
+patch_grid.zig
+
+# Zig build outputs
+.zig-cache/
+zig-cache/
+zig-out/
+
+# C / C++ / Obj-C build artifacts
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.idb
+*.dSYM/
+
+# Executables / app bundles
+*.out
+*.exe
+*.app/
+
+# Coverage / profiling
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+coverage/
+
+# Generated dependency / tooling files
+compile_commands.json
+
+# Scheme / Chez compiled artifacts
+*.fasl
+*.ufasl
+*.wfasl
+
+# Crash dumps
+core
+vgcore.*

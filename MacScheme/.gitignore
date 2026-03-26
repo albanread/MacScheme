@@ -1,0 +1,72 @@
+# macOS / editor noise
+.DS_Store
+*.swp
+*.swo
+*~
+*.bak
+
+# Zig build outputs
+.zig-cache/
+zig-out/
+zig-cache/
+
+# C / C++ build artifacts
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.idb
+*.dSYM/
+
+# Keep build-required Chez static libraries
+!lib/libkernel.a
+!lib/liblz4.a
+!lib/libz.a
+
+# Executables / app bundles
+*.out
+*.exe
+*.app/
+
+# Coverage / profiling
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+coverage/
+
+# Generated dependency / tooling files
+compile_commands.json
+
+# Source files currently outside the MacScheme app build
+src/editor/*.zig
+src/editor/*.m
+src/editor/keywords.yaml
+src/editor/generated_help.h
+!src/editor/ed_buffer.zig
+!src/editor/embedded_glyph_metal_source.h
+src/vendor/macgui/macscheme_graphics_runtime.zig
+
+# Scheme / Chez compiled artifacts
+*.fasl
+*.ufasl
+*.wfasl
+*.petite.boot
+*.scheme.boot
+
+# Keep build-required boot images
+!resources/petite.boot
+!resources/scheme.boot
+
+# Crash dumps
+core
+vgcore.*
