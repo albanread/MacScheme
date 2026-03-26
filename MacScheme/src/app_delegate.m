@@ -390,6 +390,32 @@ static NSString *MacSchemeGraphicsBootstrapSource(void) {
            ")";
 }
 
+static NSString *MacSchemeResourceBasePath(void) {
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *bundleResources = bundle.resourcePath;
+    if (bundleResources.length > 0) {
+        NSString *petite = [bundleResources stringByAppendingPathComponent:@"petite.boot"];
+        NSString *scheme = [bundleResources stringByAppendingPathComponent:@"scheme.boot"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:petite] &&
+            [[NSFileManager defaultManager] fileExistsAtPath:scheme]) {
+            return bundleResources;
+        }
+    }
+
+    NSString *cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+    if (cwd.length > 0) {
+        NSString *cwdResources = [cwd stringByAppendingPathComponent:@"resources"];
+        NSString *petite = [cwdResources stringByAppendingPathComponent:@"petite.boot"];
+        NSString *scheme = [cwdResources stringByAppendingPathComponent:@"scheme.boot"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:petite] &&
+            [[NSFileManager defaultManager] fileExistsAtPath:scheme]) {
+            return cwdResources;
+        }
+    }
+
+    return bundleResources ?: @"resources";
+}
+
 static NSString *CurrentEditorPath(void) {
     size_t pathLen = 0;
     const uint8_t *pathBytes = grid_get_editor_file_path(&pathLen);
@@ -969,7 +995,7 @@ static void *scheme_thread_entry(void *arg) {
 - (void)initScheme {
     Sscheme_init(NULL);
 
-    NSString *basePath = @"/Users/oberon/chezmac/MacScheme/resources";
+    NSString *basePath = MacSchemeResourceBasePath();
     NSString *petitePath = [basePath stringByAppendingPathComponent:@"petite.boot"];
     NSString *schemePath = [basePath stringByAppendingPathComponent:@"scheme.boot"];
 
