@@ -6,6 +6,35 @@ Drawing commands update the current target buffer only. Nothing is shown until y
 
 For a higher-level overview of how the framebuffer, Zig runtime, bridge, and Metal presentation layers fit together, see [graphics_stack.md](graphics_stack.md).
 
+
+# Pixel art oriented.
+
+The graphics mode and sprite engine is intentionally designed for 2D pixel art, with low colour depth and pallette animation.
+
+Each sprite has its own 16 colour palette, 0 is transparent, and 1 is black, the next 14 are any colour you like.
+
+The graphics screen is low colour depth, with a 256 colour palette, with the twist that the first 16 colours are set per row.
+
+Really 14 of these are configurable, 0 is transparent, and 1 is black, the next 14 are any colour you like.
+
+On the screen 240 colours are global, and you can change those, they change the entire screen, 0-15 are per row, allowing a wider
+range of colour to be displayed, and also allowing colour manipulation animations and effects.
+
+Lets say you have a 640x480 display active - that allows for 480x14 + 240 colours, then add a couple of hundred sprites. 
+
+Thats quite a lot of potential colour, using relatively little memory, making it fast to move things around.
+
+# Banked
+
+The graphics modes are banked.
+
+Bank 0,1 are used to double buffer the display.
+
+Bank 2-7 are free for graphics compositing and resources, usable by the blitter functions.
+
+
+
+
 ## App menu controls
 
 MacScheme now exposes a native **Graphics** menu for common pane-level actions:
@@ -65,6 +94,11 @@ For a mixed sprite scene that combines `sprite-from-rows!` sprites with primitiv
 
 ### Sprite cookbook
 
+A sprite is a 16 colour object, (0 is transparent, 1 is black), you set the next 14 to whatever colour you like.
+
+Each sprite has its own palette, you can use lots of sprites.
+
+
 - Use `sprite-from-rows!` when:
   - you want to sketch small pixel-art sprites directly in source
   - the sprite shape is easiest to think about as rows of palette indices
@@ -99,14 +133,14 @@ For a mixed sprite scene that combines `sprite-from-rows!` sprites with primitiv
 
 MacScheme embeds the graphics runtime inside the app’s Graphics pane instead of always using the runtime’s standalone window mode.
 
-When the pane is reinitialized with a new `gfx-screen` size or a resolution preset from the app menu, the host-pane path now performs a full teardown before creating replacement buffers:
+When the pane is reinitialized with a new `gfx-screen` size or a resolution preset from the app menu, the host-pane performs a full teardown before creating replacement buffers:
 
 - old Metal buffers and textures are released
 - Zig-side framebuffer and palette pointers are cleared before those resources are dropped
 - the old embedded `MTKView` is detached and renderer/device state is reset
 - the new graphics surface is then allocated and rebound cleanly
 
-This keeps embedded reconfiguration aligned with the standalone window lifecycle and prevents the graphics state from holding stale pointers into freed resources.
+This prevents the graphics state from holding stale pointers into freed resources.
 
 - `gfx-reset`
   - Restores the default palette and clears the current target buffer to palette index `16` (black).
