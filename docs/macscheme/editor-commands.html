@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacScheme Editor Commands</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --card: #192029;
+      --fg: #eef2f7;
+      --muted: #9db0c3;
+      --accent: #68b5ff;
+      --accent2: #8df0c8;
+      --border: #2b3744;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0d1117, #111922 45%, #101419);
+      color: var(--fg);
+    }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 72px;
+    }
+    a { color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 20px; }
+    .eyebrow {
+      color: var(--accent2);
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 8px 0 14px; font-size: 2.2rem; }
+    h2 { margin-top: 30px; }
+    p, li { color: var(--muted); line-height: 1.65; }
+    code {
+      color: var(--fg);
+      background: rgba(255,255,255,0.06);
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+    }
+    .panel {
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(25, 32, 41, 0.92);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      margin-top: 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .card {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(25, 32, 41, 0.92);
+    }
+    pre {
+      overflow-x: auto;
+      background: rgba(0,0,0,0.24);
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="../index.html">← Back to Help Home</a>
+    <div class="eyebrow">MacScheme Guide</div>
+    <h1>Editor Commands</h1>
+    <p>MacScheme’s editor mixes normal macOS document behavior with Scheme-aware structural editing. Most of the advanced commands are available from the <code>Source</code> menu as well as their keyboard shortcuts.</p>
+
+    <div class="panel">
+      <h2>Source Menu highlights</h2>
+      <ul>
+        <li><code>Option-Left</code> / <code>Option-Right</code> move backward or forward by one S-expression.</li>
+        <li><code>Option-Up</code> selects the enclosing form around the cursor.</li>
+        <li><code>Ctrl-Option-Up</code> splices (unwraps) the enclosing list.</li>
+        <li><code>Ctrl-Option-Right</code> slurps the next form into the current list.</li>
+        <li><code>Ctrl-Option-Left</code> barfs the last form back out of the current list.</li>
+        <li><code>Tab</code> re-indents the current line, and <code>Option-Q</code> re-indents the current selection or current line.</li>
+      </ul>
+    </div>
+
+    <h2>What slurp and barf do</h2>
+    <div class="grid">
+      <div class="card">
+        <strong>Slurp forward</strong>
+        <p>The current list pulls the next sibling expression inside itself.</p>
+        <pre>(a b) c
+=>
+(a b c)</pre>
+      </div>
+      <div class="card">
+        <strong>Barf forward</strong>
+        <p>The current list pushes its last element back out to the right.</p>
+        <pre>(a b c)
+=>
+(a b) c</pre>
+      </div>
+      <div class="card">
+        <strong>Splice / unwrap</strong>
+        <p>Removes one surrounding list level while keeping the contents.</p>
+        <pre>(a (b c) d)
+=>
+(a b c d)</pre>
+      </div>
+    </div>
+
+    <h2>Evaluation commands</h2>
+    <ul>
+      <li><code>Cmd-E</code> evaluates the current selection, or falls back to the current top-level form.</li>
+      <li><code>Cmd-Enter</code> evaluates the top-level form around the cursor.</li>
+      <li><code>Cmd-B</code> evaluates the entire editor buffer.</li>
+      <li><code>Cmd-.</code> interrupts a long-running evaluation from the <code>Scheme</code> menu.</li>
+    </ul>
+
+    <h2>Related guides</h2>
+    <ul>
+      <li><a href="graphics.html">Graphics guide</a></li>
+      <li><a href="sprites.html">Sprites guide</a></li>
+    </ul>
+  </main>
+</body>
+</html>

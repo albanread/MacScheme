@@ -3,6 +3,7 @@
 #import "editor/embedded_glyph_metal_source.h"
 #import "metal_grid_types.h"
 #include <mach/mach_time.h>
+#include <math.h>
 #include <Carbon/Carbon.h>
 #include <CoreText/CoreText.h>
 
@@ -15,6 +16,8 @@ static id<MTLTexture>             g_sharedAtlasTexture     = nil;
 static id<MTLSamplerState>        g_sharedSampler          = nil;
 static __weak SchemeTextGrid *    g_activeGrid             = nil;
 static BOOL                       g_installedKeyMonitor    = NO;
+static float                      g_cellWidth              = 8.0f;
+static float                      g_cellHeight             = 16.0f;
 
 // ─── Timing helpers ─────────────────────────────────────────────────────────
 
@@ -52,6 +55,8 @@ typedef NS_ENUM(uint32_t, MacSchemeGridKey) {
     MacSchemeGridKeyBackspace   = 51,
     MacSchemeGridKeyDelete      = 117,
     MacSchemeGridKeyEnter       = 36,
+    MacSchemeGridKeyPageUp      = 116,
+    MacSchemeGridKeyPageDown    = 121,
     MacSchemeGridKeyHome        = 115,
     MacSchemeGridKeyEnd         = 119,
 };
@@ -63,10 +68,38 @@ static BOOL commandSelectorToGridKey(SEL selector, uint32_t *outKeyCode) {
     if (selector == @selector(moveDown:))              { *outKeyCode = MacSchemeGridKeyDown; return YES; }
     if (selector == @selector(moveToBeginningOfLine:)) { *outKeyCode = MacSchemeGridKeyHome; return YES; }
     if (selector == @selector(moveToEndOfLine:))       { *outKeyCode = MacSchemeGridKeyEnd; return YES; }
+    if (selector == @selector(pageUp:) || selector == @selector(scrollPageUp:)) {
+        *outKeyCode = MacSchemeGridKeyPageUp;
+        return YES;
+    }
+    if (selector == @selector(pageDown:) || selector == @selector(scrollPageDown:)) {
+        *outKeyCode = MacSchemeGridKeyPageDown;
+        return YES;
+    }
     if (selector == @selector(deleteForward:))         { *outKeyCode = MacSchemeGridKeyDelete; return YES; }
     if (selector == @selector(deleteBackward:))        { *outKeyCode = MacSchemeGridKeyBackspace; return YES; }
     if (selector == @selector(insertNewline:))         { *outKeyCode = MacSchemeGridKeyEnter; return YES; }
     return NO;
+}
+
+static int lineDeltaFromScrollEvent(NSEvent *event) {
+    CGFloat dy = event.scrollingDeltaY;
+    if (fabs(dy) < 0.01) return 0;
+
+    if (event.hasPreciseScrollingDeltas) {
+        CGFloat scaled = dy / MAX(g_cellHeight * 0.75f, 1.0f);
+        int lines = (int)lround(scaled);
+        if (lines == 0) {
+            lines = dy > 0 ? 1 : -1;
+        }
+        return -lines;
+    }
+
+    int lines = (int)lround(dy);
+    if (lines == 0) {
+        lines = dy > 0 ? 1 : -1;
+    }
+    return -lines;
 }
 
 static BOOL isFunctionKeyCharacter(unichar c) {
@@ -84,6 +117,20 @@ static BOOL isFunctionKeyCharacter(unichar c) {
         default:
             return NO;
     }
+}
+
+static void gridCellForEvent(SchemeTextGrid *grid, NSEvent *event, int *outRow, int *outCol) {
+    NSPoint pointInView = [grid convertPoint:event.locationInWindow fromView:nil];
+    NSPoint pointInBacking = [grid convertPointToBacking:pointInView];
+    NSSize sizeInBacking = [grid convertSizeToBacking:grid.bounds.size];
+
+    CGFloat maxX = sizeInBacking.width > 1.0 ? sizeInBacking.width - 1.0 : 0.0;
+    CGFloat maxY = sizeInBacking.height > 1.0 ? sizeInBacking.height - 1.0 : 0.0;
+    CGFloat x = fmin(fmax(pointInBacking.x, 0.0), maxX);
+    CGFloat yFromTop = fmin(fmax(sizeInBacking.height - pointInBacking.y - 1.0, 0.0), maxY);
+
+    *outCol = (int)floor(x / MAX(g_cellWidth, 1.0f));
+    *outRow = (int)floor(yFromTop / MAX(g_cellHeight, 1.0f));
 }
 
 // ─── Glyph Atlas Builder ─────────────────────────────────────────────────────
@@ -224,6 +271,8 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
         .leading         = (float)leading,
         ._pad            = 0,
     };
+    g_cellWidth = cellW;
+    g_cellHeight = cellH;
     grid_set_atlas_info(&info);
 
     CGContextRelease(ctx);
@@ -301,6 +350,10 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
             [grid copy:nil];
             return nil;
         }
+        if ([chars isEqualToString:@"x"]) {
+            [grid cut:nil];
+            return nil;
+        }
         if ([chars isEqualToString:@"v"]) {
             [grid paste:nil];
             return nil;
@@ -346,11 +399,104 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
 - (void)mouseDown:(NSEvent *)event {
     g_activeGrid = self;
     [self.window makeFirstResponder:self];
-    [super mouseDown:event];
+    int row = 0;
+    int col = 0;
+    gridCellForEvent(self, event, &row, &col);
+    if (event.clickCount >= 2) {
+        grid_on_mouse_double_click(self.gridId, row, col, modifiersFromNSEvent(event));
+    } else {
+        grid_on_mouse_down(self.gridId, row, col, modifiersFromNSEvent(event));
+    }
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    g_activeGrid = self;
+    int row = 0;
+    int col = 0;
+    gridCellForEvent(self, event, &row, &col);
+    grid_on_mouse_drag(self.gridId, row, col, modifiersFromNSEvent(event));
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    g_activeGrid = self;
+    int row = 0;
+    int col = 0;
+    gridCellForEvent(self, event, &row, &col);
+    grid_on_mouse_up(self.gridId, row, col, modifiersFromNSEvent(event));
+}
+
+- (void)scrollWheel:(NSEvent *)event {
+    g_activeGrid = self;
+    [self.window makeFirstResponder:self];
+    if (self.gridId != 0) {
+        [super scrollWheel:event];
+        return;
+    }
+    int deltaRows = lineDeltaFromScrollEvent(event);
+    if (deltaRows != 0) {
+        grid_on_scroll(self.gridId, deltaRows);
+    } else {
+        [super scrollWheel:event];
+    }
+}
+
+- (BOOL)hasCopyableSelection {
+    size_t len = 0;
+    const uint8_t *bytes = grid_copy_selection_text(self.gridId, &len);
+    if (bytes) {
+        grid_free_bytes(bytes, len);
+    }
+    return bytes != NULL && len > 0;
+}
+
+- (BOOL)hasPasteboardText {
+    NSString *text = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+    return text.length > 0;
+}
+
+- (void)clearRepl:(id)sender {
+    (void)sender;
+    if (self.gridId != 1) return;
+    grid_clear_repl();
+}
+
+- (NSMenu *)menuForEvent:(NSEvent *)event {
+    g_activeGrid = self;
+    [self.window makeFirstResponder:self];
+    (void)event;
+
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Context"];
+    menu.autoenablesItems = NO;
+
+    NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@""];
+    copyItem.target = self;
+    copyItem.enabled = [self hasCopyableSelection];
+    [menu addItem:copyItem];
+
+    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@""];
+    pasteItem.target = self;
+    pasteItem.enabled = [self hasPasteboardText];
+    [menu addItem:pasteItem];
+
+    if (self.gridId == 1) {
+        [menu addItem:[NSMenuItem separatorItem]];
+        NSMenuItem *clearItem = [[NSMenuItem alloc] initWithTitle:@"Clear REPL" action:@selector(clearRepl:) keyEquivalent:@""];
+        clearItem.target = self;
+        clearItem.enabled = YES;
+        [menu addItem:clearItem];
+    }
+
+    return menu;
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     g_activeGrid = self;
+    if (event.keyCode == 0x7A && modifiersFromNSEvent(event) == 0) {
+        AppDelegate *delegate = (AppDelegate *)[NSApp delegate];
+        [delegate showSchemeHelp:nil];
+        return YES;
+    }
+
     if ((event.modifierFlags & NSEventModifierFlagCommand) == 0) {
         return [super performKeyEquivalent:event];
     }
@@ -360,6 +506,10 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
     NSString *chars = event.charactersIgnoringModifiers.lowercaseString;
     if ([chars isEqualToString:@"c"]) {
         [self copy:nil];
+        return YES;
+    }
+    if ([chars isEqualToString:@"x"]) {
+        [self cut:nil];
         return YES;
     }
     if ([chars isEqualToString:@"v"]) {
@@ -396,7 +546,22 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
 - (void)copy:(id)sender {
     (void)sender;
     size_t len = 0;
-    const uint8_t *bytes = grid_copy_text(self.gridId, &len);
+    const uint8_t *bytes = grid_copy_selection_text(self.gridId, &len);
+    if (bytes == NULL || len == 0) return;
+
+    NSString *text = [[NSString alloc] initWithBytes:bytes length:len encoding:NSUTF8StringEncoding];
+    grid_free_bytes(bytes, len);
+    if (!text) return;
+
+    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+    [pasteboard clearContents];
+    [pasteboard setString:text forType:NSPasteboardTypeString];
+}
+
+- (void)cut:(id)sender {
+    (void)sender;
+    size_t len = 0;
+    const uint8_t *bytes = grid_cut_selection_text(self.gridId, &len);
     if (bytes == NULL || len == 0) return;
 
     NSString *text = [[NSString alloc] initWithBytes:bytes length:len encoding:NSUTF8StringEncoding];

@@ -142,9 +142,10 @@ To make the application feel like a first-class macOS citizen while serving Sche
 *   **Load File into REPL...:** Directly prompts for a Scheme file and runs `(load "...")` in the Chez Scheme runtime without necessarily opening it in the editor panel.
 *   **Save a Copy...:** Standard macOS-style export/save-copy behavior for creating a duplicate without changing the current document identity.
 
-### Edit -> Structural (Submenu)
-Since Paredit-style chords can be difficult to memorize initially, exposing them in the menu aids discoverability:
+### Source Menu
+Since Paredit-style chords can be difficult to memorize initially, exposing them in a dedicated Source menu aids discoverability:
 *   **Wrap in Parentheses:** (`Option-Shift-9` or `Ctrl-Option-W`)
+*   **Move Backward / Forward by S-Expression:** (`Option-Left`, `Option-Right`)
 *   **Splice (Unwrap):** Removes surrounding parentheses.
 *   **Slurp Forward:** Pull next item into list (`Ctrl-Option-Right`).
 *   **Barf Forward:** Push last item out of list (`Ctrl-Option-Left`).
@@ -266,7 +267,7 @@ This section breaks the editor work into implementation tasks that can be comple
 ### Milestone E: Menus & Commands
 
 *   Add File menu commands for new, open, open recent, save, save as, save a copy, revert, and load file into REPL.
-*   Add an Edit → Structural submenu exposing the main structural editing commands.
+*   Add a Source menu exposing the main structural editing commands.
 *   Add a Scheme / Evaluate menu for evaluating the current form, selection, buffer, and current file.
 *   Add interrupt, clear REPL, restart backend, macroexpand, describe symbol, and apropos commands.
 

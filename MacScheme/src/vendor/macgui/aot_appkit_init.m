@@ -38,7 +38,10 @@ extern void ed_graphics_init(void);
 
 static bool is_in_ed_gui(void) {
     NSApplication *app = [NSApplication sharedApplication];
-    return app && [app isRunning];
+    if (!app) return false;
+    if ([app delegate] != nil) return true;
+    if ([app mainMenu] != nil) return true;
+    return [app isRunning];
 }
 
 // ─── AppKit delegate ─────────────────────────────────────────────────────────

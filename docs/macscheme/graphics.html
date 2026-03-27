@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacScheme Graphics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --card: #192029;
+      --fg: #eef2f7;
+      --muted: #9db0c3;
+      --accent: #68b5ff;
+      --accent2: #8df0c8;
+      --border: #2b3744;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: linear-gradient(180deg, #0d1117, #111922 45%, #101419); color: var(--fg); }
+    main { max-width: 920px; margin: 0 auto; padding: 40px 24px 72px; }
+    a { color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent2); font-size: 0.82rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 8px 0 14px; font-size: 2.2rem; }
+    h2 { margin-top: 30px; }
+    p, li { color: var(--muted); line-height: 1.65; }
+    code { color: var(--fg); background: rgba(255,255,255,0.06); padding: 0.1rem 0.35rem; border-radius: 6px; }
+    .panel { padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: rgba(25, 32, 41, 0.92); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); margin-top: 20px; }
+    pre { overflow-x: auto; background: rgba(0,0,0,0.24); padding: 14px; border-radius: 12px; border: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="../index.html">← Back to Help Home</a>
+    <div class="eyebrow">MacScheme Guide</div>
+    <h1>Graphics</h1>
+    <p>MacScheme embeds an indexed-colour framebuffer in the Graphics pane. You draw into buffers with Scheme procedures and present frames explicitly with <code>gfx-flip</code>.</p>
+
+    <div class="panel">
+      <h2>Quick start</h2>
+      <pre>(gfx-screen 320 240 1)
+(gfx-rect 24 16 208 128 17)
+(gfx-text 32 32 "HELLO" 18)
+(gfx-flip)</pre>
+      <ul>
+        <li><code>gfx-screen</code> creates or reconfigures the embedded graphics surface.</li>
+        <li><code>gfx-reset</code> restores the default palette and clears the current target.</li>
+        <li><code>gfx-flip</code> presents the current back buffer.</li>
+        <li><code>gfx-vsync</code> and <code>gfx-wait</code> help pace animation loops.</li>
+      </ul>
+    </div>
+
+    <h2>Menu shortcuts</h2>
+    <ul>
+      <li>The <code>Graphics</code> menu can clear the pane without rerunning your program.</li>
+      <li>Built-in classic presets include <code>256×160</code>, <code>320×200</code>, <code>320×240</code>, <code>512×320</code>, <code>640×400</code>, and <code>640×480</code>.</li>
+      <li>Wide presets include <code>720×480</code>, <code>800×450</code>, and <code>854×480</code>.</li>
+    </ul>
+
+    <h2>Drawing model</h2>
+    <ul>
+      <li>Build a frame with drawing commands such as <code>gfx-line</code>, <code>gfx-rect</code>, <code>gfx-circle</code>, <code>gfx-triangle</code>, and <code>gfx-text</code>.</li>
+      <li>Use <code>gfx-set-target</code> to draw into one of the extra buffers when you need off-screen composition.</li>
+      <li>Call <code>gfx-flip</code> after updating the frame you want shown.</li>
+    </ul>
+
+    <h2>Next step</h2>
+    <p>When you want moving objects, reusable images, or animation state, continue to the <a href="sprites.html">Sprites guide</a>.</p>
+  </main>
+</body>
+</html>

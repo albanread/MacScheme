@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacScheme Sprites</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --card: #192029;
+      --fg: #eef2f7;
+      --muted: #9db0c3;
+      --accent: #68b5ff;
+      --accent2: #8df0c8;
+      --border: #2b3744;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: linear-gradient(180deg, #0d1117, #111922 45%, #101419); color: var(--fg); }
+    main { max-width: 920px; margin: 0 auto; padding: 40px 24px 72px; }
+    a { color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent2); font-size: 0.82rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 8px 0 14px; font-size: 2.2rem; }
+    h2 { margin-top: 30px; }
+    p, li { color: var(--muted); line-height: 1.65; }
+    code { color: var(--fg); background: rgba(255,255,255,0.06); padding: 0.1rem 0.35rem; border-radius: 6px; }
+    .panel { padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: rgba(25, 32, 41, 0.92); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); margin-top: 20px; }
+    pre { overflow-x: auto; background: rgba(0,0,0,0.24); padding: 14px; border-radius: 12px; border: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="../index.html">← Back to Help Home</a>
+    <div class="eyebrow">MacScheme Guide</div>
+    <h1>Sprites</h1>
+    <p>MacScheme’s sprite system sits alongside the framebuffer API. Sprite definitions hold pixel data and palettes; sprite instances hold position, visibility, rotation, scale, animation, and effects.</p>
+
+    <div class="panel">
+      <h2>Two good ways to author sprites</h2>
+      <ul>
+        <li>Use <code>sprite-from-rows!</code> when a sprite is easiest to sketch as rows of palette indices. Width comes from the first row, height from the number of rows.</li>
+        <li>Use <code>with-sprite-canvas</code> with drawing primitives when you want circles, boxes, triangles, lines, or procedurally generated shapes.</li>
+      </ul>
+    </div>
+
+    <h2>Typical flow</h2>
+    <pre>(gfx-screen 320 240 1)
+(gfx-sprite-def 0 16 16)
+; populate pixels or rows here
+(gfx-sprite-commit 0)
+(gfx-sprite 0 0 120 80)
+(gfx-sprite-sync)
+(gfx-flip)</pre>
+
+    <h2>Useful commands</h2>
+    <ul>
+      <li><code>gfx-sprite-def</code>, <code>gfx-sprite-data</code>, and <code>gfx-sprite-commit</code> define sprite pixel data.</li>
+      <li><code>gfx-sprite</code> creates or places an instance on screen.</li>
+      <li><code>gfx-sprite-pos</code>, <code>gfx-sprite-move</code>, <code>gfx-sprite-rot</code>, and <code>gfx-sprite-scale</code> control transforms.</li>
+      <li><code>gfx-sprite-frame</code> and <code>gfx-sprite-animate</code> drive sprite sheet animation.</li>
+      <li><code>gfx-sprite-sync</code> flushes the latest sprite state before presenting.</li>
+    </ul>
+
+    <h2>Examples in MacScheme</h2>
+    <ul>
+      <li><code>examples/sprite_demo.ss</code> for row-authored sprites</li>
+      <li><code>examples/sprite_shapes_demo.ss</code> for primitive-authored shape sprites</li>
+      <li><code>examples/sprite_mixed_demo.ss</code> for a mixed scene using both techniques</li>
+    </ul>
+
+    <h2>Related guides</h2>
+    <ul>
+      <li><a href="graphics.html">Graphics guide</a></li>
+      <li><a href="editor-commands.html">Editor Commands guide</a></li>
+    </ul>
+  </main>
+</body>
+</html>

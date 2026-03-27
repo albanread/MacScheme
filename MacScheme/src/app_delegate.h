@@ -9,5 +9,6 @@
 - (void)saveEditorFile;
 - (void)saveEditorFileAs;
 - (void)revertEditorFile;
+- (void)showSchemeHelp:(id)sender;
 
 @end

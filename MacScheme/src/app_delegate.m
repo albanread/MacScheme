@@ -1,6 +1,8 @@
 #import "app_delegate.h"
 #import <MetalKit/MetalKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <WebKit/WebKit.h>
+#include <signal.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -29,6 +31,7 @@ static sem_t           *g_scheme_sem   = NULL;
 static pthread_mutex_t  g_queue_mutex  = PTHREAD_MUTEX_INITIALIZER;
 static EvalRequest     *g_queue_head   = NULL;
 static EvalRequest     *g_queue_tail   = NULL;
+static volatile sig_atomic_t g_scheme_eval_active = 0;
 
 static void scheme_enqueue(SchemeRequestKind kind, const char *utf8, size_t len) {
     EvalRequest *req = (EvalRequest *)malloc(sizeof(EvalRequest));
@@ -119,9 +122,145 @@ extern void macscheme_gfx_cycle(int64_t enabled);
 extern int64_t macscheme_gfx_screen_width(void);
 extern int64_t macscheme_gfx_screen_height(void);
 extern int64_t macscheme_gfx_screen_active(void);
+extern int64_t macscheme_gfx_inkey(void);
+extern int64_t macscheme_gfx_keydown(int64_t keycode);
 extern int64_t macscheme_gfx_buffer_width(void);
 extern int64_t macscheme_gfx_buffer_height(void);
+extern void macscheme_gfx_sprite_load(int64_t id, const char *path);
+extern void macscheme_gfx_sprite_def(int64_t id, int64_t w, int64_t h);
+extern void macscheme_gfx_sprite_data(int64_t id, int64_t x, int64_t y, int64_t c);
+extern void macscheme_gfx_sprite_commit(int64_t id);
+extern void macscheme_gfx_sprite_row_ascii(int64_t row, const char *text);
+extern void macscheme_gfx_sprite_begin(int64_t id);
+extern void macscheme_gfx_sprite_end(void);
+extern void macscheme_gfx_sprite_palette(int64_t id, int64_t idx, int64_t r, int64_t g, int64_t b);
+extern void macscheme_gfx_sprite_std_pal(int64_t id, int64_t pal_id);
+extern void macscheme_gfx_sprite_frames(int64_t id, int64_t fw, int64_t fh, int64_t count);
+extern void macscheme_gfx_sprite_set_frame(int64_t frame);
+extern void macscheme_gfx_sprite(int64_t inst, int64_t def, double x, double y);
+extern void macscheme_gfx_sprite_pos(int64_t inst, double x, double y);
+extern void macscheme_gfx_sprite_move(int64_t inst, double dx, double dy);
+extern void macscheme_gfx_sprite_rot(int64_t inst, double angle_deg);
+extern void macscheme_gfx_sprite_scale(int64_t inst, double sx, double sy);
+extern void macscheme_gfx_sprite_anchor(int64_t inst, double ax, double ay);
+extern void macscheme_gfx_sprite_show(int64_t inst);
+extern void macscheme_gfx_sprite_hide(int64_t inst);
+extern void macscheme_gfx_sprite_flip(int64_t inst, int64_t h, int64_t v);
+extern void macscheme_gfx_sprite_alpha(int64_t inst, double alpha);
+extern void macscheme_gfx_sprite_frame(int64_t inst, int64_t frame);
+extern void macscheme_gfx_sprite_animate(int64_t inst, double speed);
+extern void macscheme_gfx_sprite_priority(int64_t inst, int64_t pri);
+extern void macscheme_gfx_sprite_blend(int64_t inst, int64_t mode);
+extern void macscheme_gfx_sprite_remove(int64_t inst);
+extern void macscheme_gfx_sprite_remove_all(void);
+extern void macscheme_gfx_sprite_fx(int64_t inst, int64_t fx_type);
+extern void macscheme_gfx_sprite_fx_param(int64_t inst, double p1, double p2);
+extern void macscheme_gfx_sprite_fx_colour(int64_t inst, int64_t r, int64_t g, int64_t b, int64_t a);
+extern void macscheme_gfx_sprite_glow(int64_t inst, double radius, double intensity, int64_t r, int64_t g, int64_t b);
+extern void macscheme_gfx_sprite_outline(int64_t inst, double thickness, int64_t r, int64_t g, int64_t b);
+extern void macscheme_gfx_sprite_shadow(int64_t inst, double ox, double oy, int64_t r, int64_t g, int64_t b, int64_t a);
+extern void macscheme_gfx_sprite_tint(int64_t inst, double factor, int64_t r, int64_t g, int64_t b);
+extern void macscheme_gfx_sprite_flash(int64_t inst, double speed, int64_t r, int64_t g, int64_t b);
+extern void macscheme_gfx_sprite_fx_off(int64_t inst);
+extern void macscheme_gfx_sprite_pal_override(int64_t inst, int64_t def_id);
+extern void macscheme_gfx_sprite_pal_reset(int64_t inst);
+extern double macscheme_gfx_sprite_x(int64_t inst);
+extern double macscheme_gfx_sprite_y(int64_t inst);
+extern double macscheme_gfx_sprite_rotation(int64_t inst);
+extern int64_t macscheme_gfx_sprite_visible(int64_t inst);
+extern int64_t macscheme_gfx_sprite_current_frame(int64_t inst);
+extern int64_t macscheme_gfx_sprite_hit(int64_t a, int64_t b);
+extern int64_t macscheme_gfx_sprite_count(void);
+extern void macscheme_gfx_sprite_collide(int64_t inst, int64_t group);
+extern int64_t macscheme_gfx_sprite_overlap(int64_t grp_a, int64_t grp_b);
+extern void macscheme_gfx_sprite_sync(void);
 extern void gfx_set_host_view(void *ns_view);
+
+// MacScheme audio runtime exports.
+extern double snd_init(void);
+extern void snd_shutdown(void);
+extern double snd_is_init(void);
+extern void snd_stop_all(void);
+extern double snd_beep(double freq, double dur);
+extern double snd_zap(double freq, double dur);
+extern double snd_explode(double size, double dur);
+extern double snd_big_explosion(double size, double dur);
+extern double snd_small_explosion(double intensity, double dur);
+extern double snd_distant_explosion(double distance, double dur);
+extern double snd_metal_explosion(double shrapnel, double dur);
+extern double snd_bang(double intensity, double dur);
+extern double snd_coin(double pitch, double dur);
+extern double snd_jump(double power, double dur);
+extern double snd_powerup(double intensity, double dur);
+extern double snd_hurt(double severity, double dur);
+extern double snd_shoot(double power, double dur);
+extern double snd_click(double sharpness, double dur);
+extern double snd_blip(double pitch, double dur);
+extern double snd_pickup(double brightness, double dur);
+extern double snd_sweep_up(double start_freq, double end_freq, double dur);
+extern double snd_sweep_down(double start_freq, double end_freq, double dur);
+extern double snd_random_beep(double seed, double dur);
+extern double snd_tone(double freq, double dur, double wave);
+extern double snd_note(double midi, double dur, double wave, double a, double d, double s, double r);
+extern double snd_noise(double noise_type, double dur);
+extern double snd_fm(double carrier, double modulator, double index, double dur);
+extern double snd_filtered_tone(double freq, double dur, double wave, double ftype, double cutoff, double reso);
+extern double snd_filtered_note(double midi, double dur, double wave, double a, double d, double s, double r, double ftype, double cutoff, double reso);
+extern double snd_reverb(double freq, double dur, double wave, double room, double damp, double wet);
+extern double snd_delay(double freq, double dur, double wave, double time, double feedback, double mix);
+extern double snd_distortion(double freq, double dur, double wave, double drive, double tone_val, double level);
+extern void snd_play(double id, double vol, double pan);
+extern void snd_play_simple(double id);
+extern void snd_stop(void);
+extern void snd_stop_one(double id);
+extern double snd_is_playing(double id);
+extern double snd_get_duration(double id);
+extern double snd_free(double id);
+extern void snd_free_all(void);
+extern void snd_set_volume(double vol);
+extern double snd_get_volume(void);
+extern double snd_exists(double id);
+extern double snd_count(void);
+extern double snd_mem(void);
+extern double snd_note_to_freq(double midi);
+extern double snd_freq_to_note(double freq);
+extern double snd_export_wav(double id, void *filename_desc, double vol);
+extern double scheme_snd_export_wav(double id, const char *filename, double vol);
+extern void mus_play(void *abc_desc, double vol);
+extern void mus_play_simple(void *abc_desc);
+extern double mus_load(void *abc_desc);
+extern double mus_load_compiled(void *blob_ptr, double blob_size);
+extern void mus_play_id(double id, double vol);
+extern void mus_play_id_simple(double id);
+extern void mus_stop(void);
+extern void mus_pause(void);
+extern void mus_resume(void);
+extern void mus_set_volume(double vol);
+extern double mus_get_volume(void);
+extern double mus_free(double id);
+extern void mus_free_all(void);
+extern double mus_is_playing(void);
+extern double mus_is_playing_id(double id);
+extern double mus_state(void);
+extern double mus_exists(double id);
+extern double mus_count(void);
+extern double mus_mem(void);
+extern void *mus_get_title(double id);
+extern void *mus_get_composer(double id);
+extern void *mus_get_key(double id);
+extern double mus_get_tempo(double id);
+extern void *mus_get_compiled_blob_info(double id);
+extern double mus_render(void *abc_desc, double dur, double sr);
+extern double mus_render_simple(void *abc_desc);
+extern double mus_render_wav(void *abc_desc, void *filename_desc, double dur, double sr);
+extern double mus_export_midi(double id, void *filename_desc);
+extern void scheme_mus_play(const char *abc, double vol);
+extern void scheme_mus_play_simple(const char *abc);
+extern double scheme_mus_load(const char *abc);
+extern double scheme_mus_render(const char *abc, double dur, double sr);
+extern double scheme_mus_render_simple(const char *abc);
+extern double scheme_mus_render_wav(const char *abc, const char *filename, double dur, double sr);
+extern double scheme_mus_export_midi(double id, const char *filename);
 
 static AppDelegate *g_app_delegate = nil;
 
@@ -152,6 +291,17 @@ static CGFloat ClampSplitRatio(CGFloat ratio) {
     return ratio;
 }
 
+static void MacSchemeActivateApplication(void) {
+    if (@available(macOS 14.0, *)) {
+        [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateAllWindows];
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        [NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+    }
+}
+
 static void MacSchemeDispatchSyncOnMain(dispatch_block_t block) {
     if (!block) return;
     if ([NSThread isMainThread]) {
@@ -168,19 +318,12 @@ static CGFloat FirstSplitSubviewExtent(NSSplitView *splitView) {
     return splitView.isVertical ? first.frame.size.width : first.frame.size.height;
 }
 
-static NSArray<UTType *> *MacSchemeAllowedContentTypes(void) {
-    static NSArray<UTType *> *types = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSMutableArray<UTType *> *built = [NSMutableArray array];
-        for (NSString *ext in @[@"ss", @"scm", @"sls", @"sld", @"sch", @"txt"]) {
-            UTType *type = [UTType typeWithFilenameExtension:ext conformingToType:UTTypeText];
-            if (type) [built addObject:type];
-        }
-        if (UTTypePlainText) [built addObject:UTTypePlainText];
-        types = [built copy];
-    });
-    return types;
+static NSArray<NSString *> *MacSchemeAllowedFileExtensions(void) {
+    static NSArray<NSString *> *extensions = nil;
+    if (!extensions) {
+        extensions = @[@"ss", @"scm"];
+    }
+    return extensions;
 }
 
 static NSString *MacSchemeHistoryPath(void) {
@@ -315,11 +458,461 @@ static NSString *MacSchemeGraphicsBootstrapSource(void) {
            "  (foreign-procedure \"macscheme_gfx_screen_height\" () integer-64)) "
            "(define macscheme-gfx-screen-active "
            "  (foreign-procedure \"macscheme_gfx_screen_active\" () integer-64)) "
+           "(define macscheme-gfx-inkey "
+           "  (foreign-procedure \"macscheme_gfx_inkey\" () integer-64)) "
+           "(define macscheme-gfx-keydown "
+           "  (foreign-procedure \"macscheme_gfx_keydown\" (integer-64) integer-64)) "
            "(define macscheme-gfx-buffer-width "
            "  (foreign-procedure \"macscheme_gfx_buffer_width\" () integer-64)) "
            "(define macscheme-gfx-buffer-height "
            "  (foreign-procedure \"macscheme_gfx_buffer_height\" () integer-64)) "
+           "(define macscheme-gfx-sprite-load "
+           "  (foreign-procedure \"macscheme_gfx_sprite_load\" (integer-64 string) void)) "
+           "(define macscheme-gfx-sprite-def "
+           "  (foreign-procedure \"macscheme_gfx_sprite_def\" (integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-data "
+           "  (foreign-procedure \"macscheme_gfx_sprite_data\" (integer-64 integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-commit "
+           "  (foreign-procedure \"macscheme_gfx_sprite_commit\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-row-ascii "
+           "  (foreign-procedure \"macscheme_gfx_sprite_row_ascii\" (integer-64 string) void)) "
+           "(define macscheme-gfx-sprite-begin "
+           "  (foreign-procedure \"macscheme_gfx_sprite_begin\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-end "
+           "  (foreign-procedure \"macscheme_gfx_sprite_end\" () void)) "
+           "(define macscheme-gfx-sprite-palette "
+           "  (foreign-procedure \"macscheme_gfx_sprite_palette\" (integer-64 integer-64 integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-std-pal "
+           "  (foreign-procedure \"macscheme_gfx_sprite_std_pal\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-frames "
+           "  (foreign-procedure \"macscheme_gfx_sprite_frames\" (integer-64 integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-set-frame "
+           "  (foreign-procedure \"macscheme_gfx_sprite_set_frame\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite "
+           "  (foreign-procedure \"macscheme_gfx_sprite\" (integer-64 integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-pos "
+           "  (foreign-procedure \"macscheme_gfx_sprite_pos\" (integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-move "
+           "  (foreign-procedure \"macscheme_gfx_sprite_move\" (integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-rot "
+           "  (foreign-procedure \"macscheme_gfx_sprite_rot\" (integer-64 double-float) void)) "
+           "(define macscheme-gfx-sprite-scale "
+           "  (foreign-procedure \"macscheme_gfx_sprite_scale\" (integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-anchor "
+           "  (foreign-procedure \"macscheme_gfx_sprite_anchor\" (integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-show "
+           "  (foreign-procedure \"macscheme_gfx_sprite_show\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-hide "
+           "  (foreign-procedure \"macscheme_gfx_sprite_hide\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-flip "
+           "  (foreign-procedure \"macscheme_gfx_sprite_flip\" (integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-alpha "
+           "  (foreign-procedure \"macscheme_gfx_sprite_alpha\" (integer-64 double-float) void)) "
+           "(define macscheme-gfx-sprite-frame "
+           "  (foreign-procedure \"macscheme_gfx_sprite_frame\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-animate "
+           "  (foreign-procedure \"macscheme_gfx_sprite_animate\" (integer-64 double-float) void)) "
+           "(define macscheme-gfx-sprite-priority "
+           "  (foreign-procedure \"macscheme_gfx_sprite_priority\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-blend "
+           "  (foreign-procedure \"macscheme_gfx_sprite_blend\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-remove "
+           "  (foreign-procedure \"macscheme_gfx_sprite_remove\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-remove-all "
+           "  (foreign-procedure \"macscheme_gfx_sprite_remove_all\" () void)) "
+           "(define macscheme-gfx-sprite-fx "
+           "  (foreign-procedure \"macscheme_gfx_sprite_fx\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-fx-param "
+           "  (foreign-procedure \"macscheme_gfx_sprite_fx_param\" (integer-64 double-float double-float) void)) "
+           "(define macscheme-gfx-sprite-fx-colour "
+           "  (foreign-procedure \"macscheme_gfx_sprite_fx_colour\" (integer-64 integer-64 integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-glow "
+           "  (foreign-procedure \"macscheme_gfx_sprite_glow\" (integer-64 double-float double-float integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-outline "
+           "  (foreign-procedure \"macscheme_gfx_sprite_outline\" (integer-64 double-float integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-shadow "
+           "  (foreign-procedure \"macscheme_gfx_sprite_shadow\" (integer-64 double-float double-float integer-64 integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-tint "
+           "  (foreign-procedure \"macscheme_gfx_sprite_tint\" (integer-64 double-float integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-flash "
+           "  (foreign-procedure \"macscheme_gfx_sprite_flash\" (integer-64 double-float integer-64 integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-fx-off "
+           "  (foreign-procedure \"macscheme_gfx_sprite_fx_off\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-pal-override "
+           "  (foreign-procedure \"macscheme_gfx_sprite_pal_override\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-pal-reset "
+           "  (foreign-procedure \"macscheme_gfx_sprite_pal_reset\" (integer-64) void)) "
+           "(define macscheme-gfx-sprite-x "
+           "  (foreign-procedure \"macscheme_gfx_sprite_x\" (integer-64) double-float)) "
+           "(define macscheme-gfx-sprite-y "
+           "  (foreign-procedure \"macscheme_gfx_sprite_y\" (integer-64) double-float)) "
+           "(define macscheme-gfx-sprite-rotation "
+           "  (foreign-procedure \"macscheme_gfx_sprite_rotation\" (integer-64) double-float)) "
+           "(define macscheme-gfx-sprite-visible "
+           "  (foreign-procedure \"macscheme_gfx_sprite_visible\" (integer-64) integer-64)) "
+           "(define macscheme-gfx-sprite-current-frame "
+           "  (foreign-procedure \"macscheme_gfx_sprite_current_frame\" (integer-64) integer-64)) "
+           "(define macscheme-gfx-sprite-hit "
+           "  (foreign-procedure \"macscheme_gfx_sprite_hit\" (integer-64 integer-64) integer-64)) "
+           "(define macscheme-gfx-sprite-count "
+           "  (foreign-procedure \"macscheme_gfx_sprite_count\" () integer-64)) "
+           "(define macscheme-gfx-sprite-collide "
+           "  (foreign-procedure \"macscheme_gfx_sprite_collide\" (integer-64 integer-64) void)) "
+           "(define macscheme-gfx-sprite-overlap "
+           "  (foreign-procedure \"macscheme_gfx_sprite_overlap\" (integer-64 integer-64) integer-64)) "
+           "(define macscheme-gfx-sprite-sync "
+           "  (foreign-procedure \"macscheme_gfx_sprite_sync\" () void)) "
            "(define (->int v) (exact (round v))) "
+           "(define (->float v) (if (inexact? v) v (exact->inexact v))) "
+           "(define (->sound-id v) (->float (->int v))) "
+           "(define (->sound-code v) (->float (->int v))) "
+           "(define (->music-id v) (->float (->int v))) "
+           "(define (->bool v) (not (zero? v))) "
+           "(define snd-init "
+           "  (foreign-procedure \"snd_init\" () double-float)) "
+           "(define snd-shutdown "
+           "  (foreign-procedure \"snd_shutdown\" () void)) "
+           "(define snd-is-init "
+           "  (foreign-procedure \"snd_is_init\" () double-float)) "
+           "(define snd-stop-all "
+           "  (foreign-procedure \"snd_stop_all\" () void)) "
+           "(define snd-beep-raw "
+           "  (foreign-procedure \"snd_beep\" (double-float double-float) double-float)) "
+           "(define (snd-beep frequency duration) (snd-beep-raw (->float frequency) (->float duration))) "
+           "(define snd-zap-raw "
+           "  (foreign-procedure \"snd_zap\" (double-float double-float) double-float)) "
+           "(define (snd-zap frequency duration) (snd-zap-raw (->float frequency) (->float duration))) "
+           "(define snd-explode-raw "
+           "  (foreign-procedure \"snd_explode\" (double-float double-float) double-float)) "
+           "(define (snd-explode size duration) (snd-explode-raw (->float size) (->float duration))) "
+           "(define snd-big-explosion-raw "
+           "  (foreign-procedure \"snd_big_explosion\" (double-float double-float) double-float)) "
+           "(define (snd-big-explosion size duration) (snd-big-explosion-raw (->float size) (->float duration))) "
+           "(define snd-small-explosion-raw "
+           "  (foreign-procedure \"snd_small_explosion\" (double-float double-float) double-float)) "
+           "(define (snd-small-explosion intensity duration) (snd-small-explosion-raw (->float intensity) (->float duration))) "
+           "(define snd-distant-explosion-raw "
+           "  (foreign-procedure \"snd_distant_explosion\" (double-float double-float) double-float)) "
+           "(define (snd-distant-explosion distance duration) (snd-distant-explosion-raw (->float distance) (->float duration))) "
+           "(define snd-metal-explosion-raw "
+           "  (foreign-procedure \"snd_metal_explosion\" (double-float double-float) double-float)) "
+           "(define (snd-metal-explosion shrapnel duration) (snd-metal-explosion-raw (->float shrapnel) (->float duration))) "
+           "(define snd-bang-raw "
+           "  (foreign-procedure \"snd_bang\" (double-float double-float) double-float)) "
+           "(define (snd-bang intensity duration) (snd-bang-raw (->float intensity) (->float duration))) "
+           "(define snd-coin-raw "
+           "  (foreign-procedure \"snd_coin\" (double-float double-float) double-float)) "
+           "(define (snd-coin pitch duration) (snd-coin-raw (->float pitch) (->float duration))) "
+           "(define snd-jump-raw "
+           "  (foreign-procedure \"snd_jump\" (double-float double-float) double-float)) "
+           "(define (snd-jump power duration) (snd-jump-raw (->float power) (->float duration))) "
+           "(define snd-powerup-raw "
+           "  (foreign-procedure \"snd_powerup\" (double-float double-float) double-float)) "
+           "(define (snd-powerup intensity duration) (snd-powerup-raw (->float intensity) (->float duration))) "
+           "(define snd-hurt-raw "
+           "  (foreign-procedure \"snd_hurt\" (double-float double-float) double-float)) "
+           "(define (snd-hurt severity duration) (snd-hurt-raw (->float severity) (->float duration))) "
+           "(define snd-shoot-raw "
+           "  (foreign-procedure \"snd_shoot\" (double-float double-float) double-float)) "
+           "(define (snd-shoot power duration) (snd-shoot-raw (->float power) (->float duration))) "
+           "(define snd-click-raw "
+           "  (foreign-procedure \"snd_click\" (double-float double-float) double-float)) "
+           "(define (snd-click sharpness duration) (snd-click-raw (->float sharpness) (->float duration))) "
+           "(define snd-blip-raw "
+           "  (foreign-procedure \"snd_blip\" (double-float double-float) double-float)) "
+           "(define (snd-blip pitch duration) (snd-blip-raw (->float pitch) (->float duration))) "
+           "(define snd-pickup-raw "
+           "  (foreign-procedure \"snd_pickup\" (double-float double-float) double-float)) "
+           "(define (snd-pickup brightness duration) (snd-pickup-raw (->float brightness) (->float duration))) "
+           "(define snd-sweep-up-raw "
+           "  (foreign-procedure \"snd_sweep_up\" (double-float double-float double-float) double-float)) "
+           "(define (snd-sweep-up start-frequency end-frequency duration) (snd-sweep-up-raw (->float start-frequency) (->float end-frequency) (->float duration))) "
+           "(define snd-sweep-down-raw "
+           "  (foreign-procedure \"snd_sweep_down\" (double-float double-float double-float) double-float)) "
+           "(define (snd-sweep-down start-frequency end-frequency duration) (snd-sweep-down-raw (->float start-frequency) (->float end-frequency) (->float duration))) "
+           "(define snd-random-beep-raw "
+           "  (foreign-procedure \"snd_random_beep\" (double-float double-float) double-float)) "
+           "(define (snd-random-beep seed duration) (snd-random-beep-raw (->float seed) (->float duration))) "
+           "(define snd-tone-raw "
+           "  (foreign-procedure \"snd_tone\" (double-float double-float double-float) double-float)) "
+           "(define (snd-tone frequency duration waveform) "
+           "  (snd-tone-raw (->float frequency) (->float duration) (->sound-code waveform))) "
+           "(define snd-note-raw "
+           "  (foreign-procedure \"snd_note\" (double-float double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-note midi-note duration waveform attack decay sustain release) "
+           "  (snd-note-raw (->float midi-note) (->float duration) (->sound-code waveform) (->float attack) (->float decay) (->float sustain) (->float release))) "
+           "(define snd-noise-raw "
+           "  (foreign-procedure \"snd_noise\" (double-float double-float) double-float)) "
+           "(define (snd-noise noise-type duration) (snd-noise-raw (->sound-code noise-type) (->float duration))) "
+           "(define snd-fm-raw "
+           "  (foreign-procedure \"snd_fm\" (double-float double-float double-float double-float) double-float)) "
+           "(define (snd-fm carrier-frequency mod-frequency mod-index duration) "
+           "  (snd-fm-raw (->float carrier-frequency) (->float mod-frequency) (->float mod-index) (->float duration))) "
+           "(define snd-filtered-tone-raw "
+           "  (foreign-procedure \"snd_filtered_tone\" (double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-filtered-tone frequency duration waveform filter-type cutoff resonance) "
+           "  (snd-filtered-tone-raw (->float frequency) (->float duration) (->sound-code waveform) (->sound-code filter-type) (->float cutoff) (->float resonance))) "
+           "(define snd-filtered-note-raw "
+           "  (foreign-procedure \"snd_filtered_note\" (double-float double-float double-float double-float double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-filtered-note midi-note duration waveform attack decay sustain release filter-type cutoff resonance) "
+           "  (snd-filtered-note-raw (->float midi-note) (->float duration) (->sound-code waveform) (->float attack) (->float decay) (->float sustain) (->float release) (->sound-code filter-type) (->float cutoff) (->float resonance))) "
+           "(define snd-reverb-raw "
+           "  (foreign-procedure \"snd_reverb\" (double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-reverb frequency duration waveform room-size damping wet) "
+           "  (snd-reverb-raw (->float frequency) (->float duration) (->sound-code waveform) (->float room-size) (->float damping) (->float wet))) "
+           "(define snd-delay-raw "
+           "  (foreign-procedure \"snd_delay\" (double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-delay frequency duration waveform delay-time feedback mix) "
+           "  (snd-delay-raw (->float frequency) (->float duration) (->sound-code waveform) (->float delay-time) (->float feedback) (->float mix))) "
+           "(define snd-distortion-raw "
+           "  (foreign-procedure \"snd_distortion\" (double-float double-float double-float double-float double-float double-float) double-float)) "
+           "(define (snd-distortion frequency duration waveform drive tone level) "
+           "  (snd-distortion-raw (->float frequency) (->float duration) (->sound-code waveform) (->float drive) (->float tone) (->float level))) "
+           "(define snd-play-raw "
+           "  (foreign-procedure \"snd_play\" (double-float double-float double-float) void)) "
+           "(define (snd-play-impl id volume pan) "
+           "  (snd-play-raw (->sound-id id) (->float volume) (->float pan))) "
+           "(define snd-play-simple-raw "
+           "  (foreign-procedure \"snd_play_simple\" (double-float) void)) "
+           "(define (snd-play-simple id) (snd-play-simple-raw (->sound-id id))) "
+           "(define snd-stop "
+           "  (foreign-procedure \"snd_stop\" () void)) "
+           "(define snd-stop-one-raw "
+           "  (foreign-procedure \"snd_stop_one\" (double-float) void)) "
+           "(define (snd-stop-one id) (snd-stop-one-raw (->sound-id id))) "
+           "(define snd-is-playing-raw "
+           "  (foreign-procedure \"snd_is_playing\" (double-float) double-float)) "
+           "(define (snd-is-playing id) (snd-is-playing-raw (->sound-id id))) "
+           "(define snd-get-duration-raw "
+           "  (foreign-procedure \"snd_get_duration\" (double-float) double-float)) "
+           "(define (snd-get-duration id) (snd-get-duration-raw (->sound-id id))) "
+           "(define snd-free-raw "
+           "  (foreign-procedure \"snd_free\" (double-float) double-float)) "
+           "(define (snd-free id) (snd-free-raw (->sound-id id))) "
+           "(define snd-free-all "
+           "  (foreign-procedure \"snd_free_all\" () void)) "
+           "(define snd-set-volume-raw "
+           "  (foreign-procedure \"snd_set_volume\" (double-float) void)) "
+           "(define (snd-set-volume volume) (snd-set-volume-raw (->float volume))) "
+           "(define snd-get-volume "
+           "  (foreign-procedure \"snd_get_volume\" () double-float)) "
+           "(define snd-exists-raw "
+           "  (foreign-procedure \"snd_exists\" (double-float) double-float)) "
+           "(define (snd-exists id) (snd-exists-raw (->sound-id id))) "
+           "(define snd-count "
+           "  (foreign-procedure \"snd_count\" () double-float)) "
+           "(define snd-mem "
+           "  (foreign-procedure \"snd_mem\" () double-float)) "
+           "(define snd-note-to-freq-raw "
+           "  (foreign-procedure \"snd_note_to_freq\" (double-float) double-float)) "
+           "(define (snd-note-to-freq midi-note) (snd-note-to-freq-raw (->float midi-note))) "
+           "(define snd-freq-to-note-raw "
+           "  (foreign-procedure \"snd_freq_to_note\" (double-float) double-float)) "
+           "(define (snd-freq-to-note frequency) (snd-freq-to-note-raw (->float frequency))) "
+           "(define snd-export-wav-raw "
+           "  (foreign-procedure \"snd_export_wav\" (double-float string double-float) double-float)) "
+           "(define (snd-export-wav-impl id path volume) "
+           "  (snd-export-wav-raw (->sound-id id) path (->float volume))) "
+           "(define mus-play-impl "
+           "  (foreign-procedure \"mus_play\" (string double-float) void)) "
+           "(define (mus-play-simple value) (mus-play-impl value 1.0)) "
+           "(define mus-load "
+           "  (foreign-procedure \"mus_load\" (string) double-float)) "
+           "(define mus-play-id-raw "
+           "  (foreign-procedure \"mus_play_id\" (double-float double-float) void)) "
+           "(define (mus-play-id-impl id volume) "
+           "  (mus-play-id-raw (->music-id id) (->float volume))) "
+           "(define (mus-play-id-simple id) (mus-play-id-impl (->music-id id) 1.0)) "
+           "(define mus-stop "
+           "  (foreign-procedure \"mus_stop\" () void)) "
+           "(define mus-pause "
+           "  (foreign-procedure \"mus_pause\" () void)) "
+           "(define mus-resume "
+           "  (foreign-procedure \"mus_resume\" () void)) "
+           "(define mus-set-volume "
+           "  (foreign-procedure \"mus_set_volume\" (double-float) void)) "
+           "(define mus-get-volume "
+           "  (foreign-procedure \"mus_get_volume\" () double-float)) "
+           "(define mus-free-raw "
+           "  (foreign-procedure \"mus_free\" (double-float) double-float)) "
+           "(define (mus-free music-id) (mus-free-raw (->music-id music-id))) "
+           "(define mus-free-all "
+           "  (foreign-procedure \"mus_free_all\" () void)) "
+           "(define mus-is-playing "
+           "  (foreign-procedure \"mus_is_playing\" () double-float)) "
+           "(define mus-is-playing-id-raw "
+           "  (foreign-procedure \"mus_is_playing_id\" (double-float) double-float)) "
+           "(define (mus-is-playing-id music-id) (mus-is-playing-id-raw (->music-id music-id))) "
+           "(define mus-state "
+           "  (foreign-procedure \"mus_state\" () double-float)) "
+           "(define mus-exists-raw "
+           "  (foreign-procedure \"mus_exists\" (double-float) double-float)) "
+           "(define (mus-exists music-id) (mus-exists-raw (->music-id music-id))) "
+           "(define mus-count "
+           "  (foreign-procedure \"mus_count\" () double-float)) "
+           "(define mus-mem "
+           "  (foreign-procedure \"mus_mem\" () double-float)) "
+           "(define mus-get-tempo-raw "
+           "  (foreign-procedure \"mus_get_tempo\" (double-float) double-float)) "
+           "(define (mus-get-tempo music-id) (mus-get-tempo-raw (->music-id music-id))) "
+           "(define mus-render "
+           "  (foreign-procedure \"mus_render\" (string double-float double-float) double-float)) "
+           "(define mus-render-simple "
+           "  (foreign-procedure \"mus_render_simple\" (string) double-float)) "
+           "(define mus-render-wav-impl "
+           "  (foreign-procedure \"mus_render_wav\" (string string double-float double-float) double-float)) "
+           "(define mus-export-midi-raw "
+           "  (foreign-procedure \"mus_export_midi\" (double-float string) double-float)) "
+           "(define (mus-export-midi-impl music-id path) (mus-export-midi-raw (->music-id music-id) path)) "
+           "(define sound-wave-sine 0) "
+           "(define sound-wave-square 1) "
+           "(define sound-wave-saw 2) "
+           "(define sound-wave-triangle 3) "
+           "(define sound-wave-noise 4) "
+           "(define sound-wave-pulse 5) "
+           "(define sound-noise-white 0) "
+           "(define sound-noise-pink 1) "
+           "(define sound-noise-brown 2) "
+           "(define sound-filter-none 0) "
+           "(define sound-filter-lowpass 1) "
+           "(define sound-filter-highpass 2) "
+           "(define sound-filter-bandpass 3) "
+           "(define (sound-waveform-id wave) "
+           "  (if (symbol? wave) "
+           "      (case wave "
+           "        ((sine) sound-wave-sine) "
+           "        ((square) sound-wave-square) "
+           "        ((saw sawtooth) sound-wave-saw) "
+           "        ((triangle) sound-wave-triangle) "
+           "        ((noise) sound-wave-noise) "
+           "        ((pulse) sound-wave-pulse) "
+           "        (else (assertion-violation 'sound-waveform-id \"unknown waveform\" wave))) "
+           "      (->int wave))) "
+           "(define (sound-noise-id kind) "
+           "  (if (symbol? kind) "
+           "      (case kind "
+           "        ((white) sound-noise-white) "
+           "        ((pink) sound-noise-pink) "
+           "        ((brown) sound-noise-brown) "
+           "        (else (assertion-violation 'sound-noise-id \"unknown noise type\" kind))) "
+           "      (->int kind))) "
+           "(define (sound-filter-id kind) "
+           "  (if (symbol? kind) "
+           "      (case kind "
+           "        ((none) sound-filter-none) "
+           "        ((lowpass low) sound-filter-lowpass) "
+           "        ((highpass high) sound-filter-highpass) "
+           "        ((bandpass band) sound-filter-bandpass) "
+           "        (else (assertion-violation 'sound-filter-id \"unknown filter type\" kind))) "
+           "      (->int kind))) "
+           "(define (audio-init) (->bool (snd-init))) "
+           "(define (audio-shutdown) (snd-shutdown)) "
+           "(define (audio-initialized?) (->bool (snd-is-init))) "
+           "(define (audio-stop-all) (snd-stop-all)) "
+           "(define (sound-play id . rest) "
+           "  (case (length rest) "
+           "    ((0) (snd-play-simple (->int id))) "
+           "    ((1) (snd-play-impl (->int id) (->float (car rest)) 0.0)) "
+           "    ((2) (snd-play-impl (->int id) (->float (car rest)) (->float (cadr rest)))) "
+           "    (else (assertion-violation 'sound-play \"expected id [volume [pan]]\" (cons id rest))))) "
+           "(define sound-volume "
+           "  (case-lambda "
+           "    (() (snd-get-volume)) "
+           "    ((level) (snd-set-volume (->float level))))) "
+           "(define (sound-stop) (snd-stop)) "
+           "(define (sound-stop-one id) (snd-stop-one (->int id))) "
+           "(define (sound-free id) (->bool (snd-free (->int id)))) "
+           "(define (sound-free-all) (snd-free-all)) "
+           "(define (sound-playing? id) (->bool (snd-is-playing (->int id)))) "
+           "(define (sound-duration id) (snd-get-duration (->int id))) "
+           "(define (sound-exists? id) (->bool (snd-exists (->int id)))) "
+           "(define (sound-count) (->int (snd-count))) "
+           "(define (sound-memory-usage) (->int (snd-mem))) "
+           "(define (sound-export-wav id path . rest) "
+           "  (let ((volume (if (null? rest) 1.0 (->float (car rest))))) "
+           "    (->bool (snd-export-wav-impl (->int id) path volume)))) "
+           "(define (midi->hz midi-note) (snd-note-to-freq (->float midi-note))) "
+           "(define (hz->midi hz) (->int (snd-freq-to-note (->float hz)))) "
+           "(define (sound-beep frequency duration) (snd-beep (->float frequency) (->float duration))) "
+           "(define (sound-zap frequency duration) (snd-zap (->float frequency) (->float duration))) "
+           "(define (sound-explode size duration) (snd-explode (->float size) (->float duration))) "
+           "(define (sound-big-explosion size duration) (snd-big-explosion (->float size) (->float duration))) "
+           "(define (sound-small-explosion intensity duration) (snd-small-explosion (->float intensity) (->float duration))) "
+           "(define (sound-distant-explosion distance duration) (snd-distant-explosion (->float distance) (->float duration))) "
+           "(define (sound-metal-explosion shrapnel duration) (snd-metal-explosion (->float shrapnel) (->float duration))) "
+           "(define (sound-bang intensity duration) (snd-bang (->float intensity) (->float duration))) "
+           "(define (sound-coin pitch duration) (snd-coin (->float pitch) (->float duration))) "
+           "(define (sound-jump power duration) (snd-jump (->float power) (->float duration))) "
+           "(define (sound-powerup intensity duration) (snd-powerup (->float intensity) (->float duration))) "
+           "(define (sound-hurt severity duration) (snd-hurt (->float severity) (->float duration))) "
+           "(define (sound-shoot power duration) (snd-shoot (->float power) (->float duration))) "
+           "(define (sound-click sharpness duration) (snd-click (->float sharpness) (->float duration))) "
+           "(define (sound-blip pitch duration) (snd-blip (->float pitch) (->float duration))) "
+           "(define (sound-pickup brightness duration) (snd-pickup (->float brightness) (->float duration))) "
+           "(define (sound-sweep-up start-frequency end-frequency duration) (snd-sweep-up (->float start-frequency) (->float end-frequency) (->float duration))) "
+           "(define (sound-sweep-down start-frequency end-frequency duration) (snd-sweep-down (->float start-frequency) (->float end-frequency) (->float duration))) "
+           "(define (sound-random-beep seed duration) (snd-random-beep (->float seed) (->float duration))) "
+           "(define (sound-tone frequency duration waveform) (snd-tone (->float frequency) (->float duration) (sound-waveform-id waveform))) "
+           "(define (sound-note midi-note duration waveform attack decay sustain release) "
+           "  (snd-note (->float midi-note) (->float duration) (sound-waveform-id waveform) (->float attack) (->float decay) (->float sustain) (->float release))) "
+           "(define (sound-noise noise-type duration) (snd-noise (sound-noise-id noise-type) (->float duration))) "
+           "(define (sound-fm carrier-frequency mod-frequency mod-index duration) "
+           "  (snd-fm (->float carrier-frequency) (->float mod-frequency) (->float mod-index) (->float duration))) "
+           "(define (sound-filter-tone frequency duration waveform filter-type cutoff resonance) "
+           "  (snd-filtered-tone (->float frequency) (->float duration) (sound-waveform-id waveform) (sound-filter-id filter-type) (->float cutoff) (->float resonance))) "
+           "(define (sound-filter-note midi-note duration waveform attack decay sustain release filter-type cutoff resonance) "
+           "  (snd-filtered-note (->float midi-note) (->float duration) (sound-waveform-id waveform) (->float attack) (->float decay) (->float sustain) (->float release) (sound-filter-id filter-type) (->float cutoff) (->float resonance))) "
+           "(define (sound-reverb frequency duration waveform room-size damping wet) "
+           "  (snd-reverb (->float frequency) (->float duration) (sound-waveform-id waveform) (->float room-size) (->float damping) (->float wet))) "
+           "(define (sound-delay frequency duration waveform delay-time feedback mix) "
+           "  (snd-delay (->float frequency) (->float duration) (sound-waveform-id waveform) (->float delay-time) (->float feedback) (->float mix))) "
+           "(define (sound-distortion frequency duration waveform drive tone level) "
+           "  (snd-distortion (->float frequency) (->float duration) (sound-waveform-id waveform) (->float drive) (->float tone) (->float level))) "
+           "(define (abc . lines) "
+           "  (let loop ((rest lines) (out \"\")) "
+           "    (cond "
+           "      ((null? rest) out) "
+           "      ((null? (cdr rest)) (string-append out (car rest))) "
+           "      (else (loop (cdr rest) (string-append out (car rest) \"\\n\")))))) "
+           "(define (music-play value . rest) "
+           "  (case (length rest) "
+           "    ((0) (if (string? value) (mus-play-impl value 1.0) (mus-play-id-impl (->music-id value) 1.0))) "
+           "    ((1) (if (string? value) (mus-play-impl value (->float (car rest))) (mus-play-id-impl (->music-id value) (->float (car rest))))) "
+           "    (else (assertion-violation 'music-play \"expected music/string [volume]\" (cons value rest))))) "
+           "(define (music-load abc-text) (mus-load abc-text)) "
+           "(define (music-play-id music-id . rest) "
+           "  (if (null? rest) "
+           "      (mus-play-id-impl (->music-id music-id) 1.0) "
+           "      (mus-play-id-impl (->music-id music-id) (->float (car rest))))) "
+           "(define (music-stop) (mus-stop)) "
+           "(define (music-pause) (mus-pause)) "
+           "(define (music-resume) (mus-resume)) "
+           "(define music-volume "
+           "  (case-lambda "
+           "    (() (mus-get-volume)) "
+           "    ((level) (mus-set-volume (->float level))))) "
+           "(define (music-free music-id) (->bool (mus-free (->music-id music-id)))) "
+           "(define (music-free-all) (mus-free-all)) "
+           "(define music-playing? "
+           "  (case-lambda "
+           "    (() (->bool (mus-is-playing))) "
+           "    ((music-id) (->bool (mus-is-playing-id (->music-id music-id)))))) "
+           "(define (music-state) (->int (mus-state))) "
+           "(define (music-exists? music-id) (->bool (mus-exists (->music-id music-id)))) "
+           "(define (music-count) (->int (mus-count))) "
+           "(define (music-memory-usage) (->int (mus-mem))) "
+           "(define (music-tempo music-id) (mus-get-tempo (->music-id music-id))) "
+           "(define music-render "
+           "  (case-lambda "
+           "    ((abc-text) (mus-render-simple abc-text)) "
+           "    ((abc-text duration sample-rate) (mus-render abc-text (->float duration) (->float sample-rate))))) "
+           "(define (music-render-wav abc-text path . rest) "
+           "  (case (length rest) "
+           "    ((0) (->bool (mus-render-wav-impl abc-text path 0.0 0.0))) "
+           "    ((2) (->bool (mus-render-wav-impl abc-text path (->float (car rest)) (->float (cadr rest))))) "
+           "    (else (assertion-violation 'music-render-wav \"expected abc path [duration sample-rate]\" (cons abc-text (cons path rest)))))) "
+           "(define (music-export-midi music-id path) "
+           "  (->bool (mus-export-midi-impl (->music-id music-id) path))) "
            "(define (gfx-set-default-palette!) "
            "  (begin "
            "    (macscheme-gfx-palette 16 0 0 0) "
@@ -440,8 +1033,191 @@ static NSString *MacSchemeGraphicsBootstrapSource(void) {
            "(define (gfx-width) (macscheme-gfx-screen-width)) "
            "(define (gfx-height) (macscheme-gfx-screen-height)) "
            "(define (gfx-active?) (not (zero? (macscheme-gfx-screen-active)))) "
+               "(define gfx-key-name-table "
+               "  '((0 . a) (1 . s) (2 . d) (3 . f) (4 . h) (5 . g) (6 . z) (7 . x) (8 . c) (9 . v) "
+               "    (11 . b) (12 . q) (13 . w) (14 . e) (15 . r) (16 . y) (17 . t) (31 . o) (32 . u) "
+               "    (34 . i) (35 . p) (37 . l) (38 . j) (40 . k) (45 . n) (46 . m) (49 . space) "
+               "    (36 . return) (48 . tab) (51 . backspace) (53 . escape) (55 . command) "
+               "    (56 . shift) (58 . option) (59 . control) (123 . left) (124 . right) "
+               "    (125 . down) (126 . up))) "
+               "(define gfx-key-alias-table "
+               "  '((a . 0) (s . 1) (d . 2) (f . 3) (h . 4) (g . 5) (z . 6) (x . 7) (c . 8) (v . 9) "
+               "    (b . 11) (q . 12) (w . 13) (e . 14) (r . 15) (y . 16) (t . 17) (o . 31) (u . 32) "
+               "    (i . 34) (p . 35) (l . 37) (j . 38) (k . 40) (n . 45) (m . 46) (space . 49) "
+               "    (return . 36) (enter . 36) (tab . 48) (backspace . 51) (delete . 51) (escape . 53) "
+               "    (esc . 53) (command . 55) (cmd . 55) (shift . 56) (option . 58) (alt . 58) "
+               "    (control . 59) (ctrl . 59) (left . 123) (right . 124) (down . 125) (up . 126))) "
+               "(define (gfx-key-name keycode) "
+               "  (let ((entry (assv (->int keycode) gfx-key-name-table))) "
+               "    (and entry (cdr entry)))) "
+               "(define (gfx-key-code key) "
+               "  (cond "
+               "    ((integer? key) (->int key)) "
+               "    ((symbol? key) "
+               "     (let ((entry (assq key gfx-key-alias-table))) "
+               "       (if entry "
+               "           (cdr entry) "
+               "           (assertion-violation 'gfx-key-code \"unknown key name\" key)))) "
+               "    ((string? key) (gfx-key-code (string->symbol (string-downcase key)))) "
+               "    (else (assertion-violation 'gfx-key-code \"expected key symbol, string, or integer keycode\" key)))) "
+               "(define (gfx-key-pressed? key) "
+               "  (not (zero? (macscheme-gfx-keydown (gfx-key-code key))))) "
+               "(define gfx-key-down? gfx-key-pressed?) "
+               "(define (gfx-read-key-code) "
+               "  (let ((code (macscheme-gfx-inkey))) "
+               "    (and (not (zero? code)) code))) "
+               "(define (gfx-read-key) "
+               "  (let ((code (gfx-read-key-code))) "
+               "    (and code (or (gfx-key-name code) code)))) "
            "(define (gfx-buffer-width) (macscheme-gfx-buffer-width)) "
            "(define (gfx-buffer-height) (macscheme-gfx-buffer-height)) "
+           "(define (gfx-sprite-load id path) "
+           "  (macscheme-gfx-sprite-load (->int id) path)) "
+           "(define (gfx-sprite-def id w h) "
+           "  (macscheme-gfx-sprite-def (->int id) (->int w) (->int h))) "
+           "(define (gfx-sprite-data id x y colour-index) "
+           "  (macscheme-gfx-sprite-data (->int id) (->int x) (->int y) (->int colour-index))) "
+           "(define (gfx-sprite-commit id) "
+           "  (macscheme-gfx-sprite-commit (->int id))) "
+           "(define (gfx-sprite-row row pattern) "
+           "  (macscheme-gfx-sprite-row-ascii (->int row) pattern)) "
+           "(define (gfx-sprite-begin id) "
+           "  (macscheme-gfx-sprite-begin (->int id))) "
+           "(define (gfx-sprite-end) (macscheme-gfx-sprite-end)) "
+           "(define (gfx-sprite-palette id idx r g b) "
+           "  (macscheme-gfx-sprite-palette (->int id) (->int idx) (->int r) (->int g) (->int b))) "
+           "(define (gfx-sprite-std-pal id palette-id) "
+           "  (macscheme-gfx-sprite-std-pal (->int id) (->int palette-id))) "
+           "(define (gfx-sprite-frames id fw fh count) "
+           "  (macscheme-gfx-sprite-frames (->int id) (->int fw) (->int fh) (->int count))) "
+           "(define (gfx-sprite-set-frame frame) "
+           "  (macscheme-gfx-sprite-set-frame (->int frame))) "
+           "(define (gfx-sprite inst def x y) "
+           "  (let ((inst-id (->int inst))) "
+           "    (macscheme-gfx-sprite inst-id (->int def) (->float x) (->float y)) "
+           "    (macscheme-gfx-sprite-show inst-id))) "
+           "(define (gfx-sprite-pos inst x y) "
+           "  (macscheme-gfx-sprite-pos (->int inst) (->float x) (->float y))) "
+           "(define (gfx-sprite-move inst dx dy) "
+           "  (macscheme-gfx-sprite-move (->int inst) (->float dx) (->float dy))) "
+           "(define (gfx-sprite-rot inst angle-degrees) "
+           "  (macscheme-gfx-sprite-rot (->int inst) (->float angle-degrees))) "
+           "(define (gfx-sprite-scale inst sx sy) "
+           "  (macscheme-gfx-sprite-scale (->int inst) (->float sx) (->float sy))) "
+           "(define (gfx-sprite-anchor inst ax ay) "
+           "  (macscheme-gfx-sprite-anchor (->int inst) (->float ax) (->float ay))) "
+           "(define (gfx-sprite-show inst) "
+           "  (macscheme-gfx-sprite-show (->int inst))) "
+           "(define (gfx-sprite-hide inst) "
+           "  (macscheme-gfx-sprite-hide (->int inst))) "
+           "(define (gfx-sprite-flip inst flip-h flip-v) "
+           "  (macscheme-gfx-sprite-flip (->int inst) (if flip-h 1 0) (if flip-v 1 0))) "
+           "(define (gfx-sprite-alpha inst a) "
+           "  (macscheme-gfx-sprite-alpha (->int inst) (->float a))) "
+           "(define (gfx-sprite-frame inst n) "
+           "  (macscheme-gfx-sprite-frame (->int inst) (->int n))) "
+           "(define (gfx-sprite-animate inst speed) "
+           "  (macscheme-gfx-sprite-animate (->int inst) (->float speed))) "
+           "(define (gfx-sprite-priority inst p) "
+           "  (macscheme-gfx-sprite-priority (->int inst) (->int p))) "
+           "(define (gfx-sprite-blend inst mode) "
+           "  (macscheme-gfx-sprite-blend (->int inst) (if mode 1 0))) "
+           "(define (gfx-sprite-remove inst) "
+           "  (macscheme-gfx-sprite-remove (->int inst))) "
+           "(define (gfx-sprite-remove-all) (macscheme-gfx-sprite-remove-all)) "
+           "(define (gfx-sprite-fx inst effect-type) "
+           "  (macscheme-gfx-sprite-fx (->int inst) (->int effect-type))) "
+           "(define (gfx-sprite-fx-param inst p1 p2) "
+           "  (macscheme-gfx-sprite-fx-param (->int inst) (->float p1) (->float p2))) "
+           "(define (gfx-sprite-fx-colour inst r g b a) "
+           "  (macscheme-gfx-sprite-fx-colour (->int inst) (->int r) (->int g) (->int b) (->int a))) "
+           "(define (gfx-sprite-glow inst radius intensity r g b) "
+           "  (macscheme-gfx-sprite-glow (->int inst) (->float radius) (->float intensity) (->int r) (->int g) (->int b))) "
+           "(define (gfx-sprite-outline inst thickness r g b) "
+           "  (macscheme-gfx-sprite-outline (->int inst) (->float thickness) (->int r) (->int g) (->int b))) "
+           "(define (gfx-sprite-shadow inst ox oy r g b a) "
+           "  (macscheme-gfx-sprite-shadow (->int inst) (->float ox) (->float oy) (->int r) (->int g) (->int b) (->int a))) "
+           "(define (gfx-sprite-tint inst factor r g b) "
+           "  (macscheme-gfx-sprite-tint (->int inst) (->float factor) (->int r) (->int g) (->int b))) "
+           "(define (gfx-sprite-flash inst speed r g b) "
+           "  (macscheme-gfx-sprite-flash (->int inst) (->float speed) (->int r) (->int g) (->int b))) "
+           "(define (gfx-sprite-fx-off inst) "
+           "  (macscheme-gfx-sprite-fx-off (->int inst))) "
+           "(define (gfx-sprite-pal-override inst def-id) "
+           "  (macscheme-gfx-sprite-pal-override (->int inst) (->int def-id))) "
+           "(define (gfx-sprite-pal-reset inst) "
+           "  (macscheme-gfx-sprite-pal-reset (->int inst))) "
+           "(define (gfx-sprite-x inst) (macscheme-gfx-sprite-x (->int inst))) "
+           "(define (gfx-sprite-y inst) (macscheme-gfx-sprite-y (->int inst))) "
+           "(define (gfx-sprite-rotation inst) (macscheme-gfx-sprite-rotation (->int inst))) "
+           "(define (gfx-sprite-visible? inst) "
+           "  (not (zero? (macscheme-gfx-sprite-visible (->int inst))))) "
+           "(define (gfx-sprite-current-frame inst) "
+           "  (macscheme-gfx-sprite-current-frame (->int inst))) "
+           "(define (gfx-sprite-hit a b) "
+           "  (not (zero? (macscheme-gfx-sprite-hit (->int a) (->int b))))) "
+           "(define (gfx-sprite-count) (macscheme-gfx-sprite-count)) "
+           "(define (gfx-sprite-collide inst group) "
+           "  (macscheme-gfx-sprite-collide (->int inst) (->int group))) "
+           "(define (gfx-sprite-overlap group-a group-b) "
+           "  (not (zero? (macscheme-gfx-sprite-overlap (->int group-a) (->int group-b))))) "
+           "(define (gfx-sprite-sync) (macscheme-gfx-sprite-sync)) "
+           "(define (sprite-create! def-id w h) "
+           "  (gfx-sprite-def def-id w h)) "
+           "(define (sprite-load! def-id path) "
+           "  (gfx-sprite-load def-id path)) "
+           "(define (sprite-instance! inst-id def-id x y) "
+           "  (gfx-sprite inst-id def-id x y)) "
+           "(define (sprite-pattern-width rows) "
+           "  (cond "
+           "    ((null? rows) 0) "
+           "    ((vector? rows) (sprite-pattern-width (vector->list rows))) "
+           "    (else (string-length (car rows))))) "
+           "(define (sprite-pattern-height rows) "
+           "  (cond "
+           "    ((null? rows) 0) "
+           "    ((vector? rows) (vector-length rows)) "
+           "    (else (length rows)))) "
+           "(define (sprite-pattern->list rows) "
+           "  (cond "
+           "    ((vector? rows) (vector->list rows)) "
+           "    ((list? rows) rows) "
+           "    (else (assertion-violation 'sprite-pattern->list \"expected list or vector of strings\" rows)))) "
+           "(define (sprite-from-rows! def-id rows) "
+           "  (let* ((rows (sprite-pattern->list rows)) "
+           "         (h (sprite-pattern-height rows)) "
+           "         (w (sprite-pattern-width rows))) "
+           "    (when (or (zero? w) (zero? h)) "
+           "      (assertion-violation 'sprite-from-rows! \"rows must be non-empty\" rows)) "
+           "    (for-each (lambda (row) "
+           "                (unless (= (string-length row) w) "
+           "                  (assertion-violation 'sprite-from-rows! \"all rows must have the same width\" rows))) "
+           "              rows) "
+           "    (gfx-sprite-def def-id w h) "
+           "    (with-sprite-canvas def-id "
+           "      (gfx-cls 0) "
+           "      (let loop ((row-index 0) (rest rows)) "
+           "        (unless (null? rest) "
+           "          (gfx-sprite-row row-index (car rest)) "
+           "          (loop (+ row-index 1) (cdr rest))))) "
+           "    def-id)) "
+           "(define (sprite-show! inst) (gfx-sprite-show inst)) "
+           "(define (sprite-hide! inst) (gfx-sprite-hide inst)) "
+           "(define (sprite-move! inst dx dy) (gfx-sprite-move inst dx dy)) "
+           "(define (sprite-position! inst x y) (gfx-sprite-pos inst x y)) "
+           "(define (sprite-scale! inst sx sy) (gfx-sprite-scale inst sx sy)) "
+           "(define (sprite-rotate! inst deg) (gfx-sprite-rot inst deg)) "
+           "(define (sprite-frame! inst n) (gfx-sprite-frame inst n)) "
+           "(define (sprite-animate! inst speed) (gfx-sprite-animate inst speed)) "
+           "(define-syntax with-sprite-canvas "
+           "  (syntax-rules () "
+           "    ((_ sprite-id body ...) "
+           "     (begin "
+           "       (gfx-sprite-begin sprite-id) "
+           "       (dynamic-wind "
+           "         (lambda () #f) "
+           "         (lambda () body ...) "
+           "         (lambda () (gfx-sprite-end))))))) "
            "(define (gfx-line-pal-band y0 y1 idx r g b) "
            "  (let loop ((y (exact (round y0))) (end (exact (round y1)))) "
            "    (when (<= y end) "
@@ -536,6 +1312,296 @@ static NSString *MacSchemeResourceBasePath(void) {
     return bundleResources ?: @"resources";
 }
 
+static NSString *MacSchemeDocsRootPath(void) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *cwd = fm.currentDirectoryPath ?: @"";
+    NSArray<NSString *> *candidates = @[
+        [[MacSchemeResourceBasePath() stringByAppendingPathComponent:@"docs"] stringByStandardizingPath],
+        [[cwd stringByAppendingPathComponent:@"../docs"] stringByStandardizingPath],
+        [[cwd stringByAppendingPathComponent:@"docs"] stringByStandardizingPath],
+    ];
+
+    for (NSString *candidate in candidates) {
+        BOOL isDirectory = NO;
+        if ([fm fileExistsAtPath:candidate isDirectory:&isDirectory] && isDirectory) {
+            return candidate;
+        }
+    }
+
+    return candidates.firstObject;
+}
+
+static NSURL *MacSchemeHelpEntryURL(void) {
+    NSString *docsRoot = MacSchemeDocsRootPath();
+    if (docsRoot.length == 0) return nil;
+
+    NSArray<NSString *> *entryCandidates = @[@"index.html", @"csug/csug.html", @"tspl4/index.html"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *relativePath in entryCandidates) {
+        NSString *candidate = [docsRoot stringByAppendingPathComponent:relativePath];
+        if ([fm fileExistsAtPath:candidate]) {
+            return [NSURL fileURLWithPath:candidate];
+        }
+    }
+    return nil;
+}
+
+static NSString *MacSchemeHelpFallbackHTML(void) {
+    NSString *docsRoot = MacSchemeDocsRootPath() ?: @"(unknown)";
+    NSString *escapedRoot = [[docsRoot stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"]
+                             stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+    return [NSString stringWithFormat:
+            @"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+             "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+             "<title>MacScheme Help</title>"
+             "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:52rem;margin:3rem auto;padding:0 1.25rem;line-height:1.6;background:#101419;color:#eef2f7}a{color:#68b5ff}code{background:rgba(255,255,255,.08);padding:.1rem .35rem;border-radius:6px}</style>"
+             "</head><body><h1>MacScheme Help</h1><p>The packaged help files were not found.</p><p>Expected docs folder: <code>%@</code></p><p>Rebuild or repackage MacScheme with the bundled docs to restore the help viewer home page and offline references.</p></body></html>",
+            escapedRoot];
+}
+
+static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
+    if (!helpWindow) return;
+
+    NSWindow *editorWindow = g_app_delegate.window ?: [NSApp mainWindow];
+    if (editorWindow == helpWindow) {
+        editorWindow = [NSApp keyWindow];
+    }
+    if (editorWindow == helpWindow) {
+        editorWindow = nil;
+    }
+
+    NSScreen *screen = editorWindow ? editorWindow.screen : [NSScreen mainScreen];
+    if (!screen) return;
+
+    NSRect screenFrame = screen.visibleFrame;
+    const CGFloat gap = 8.0;
+    const CGFloat desiredHelpWidth = 480.0;
+    const CGFloat minHelpWidth = 360.0;
+
+    if (editorWindow) {
+        NSRect editorFrame = editorWindow.frame;
+
+        if (editorFrame.origin.x < screenFrame.origin.x) {
+            editorFrame.origin.x = screenFrame.origin.x;
+        }
+        if (editorFrame.origin.y < screenFrame.origin.y) {
+            editorFrame.origin.y = screenFrame.origin.y;
+        }
+        if (NSMaxY(editorFrame) > NSMaxY(screenFrame)) {
+            editorFrame.origin.y = NSMaxY(screenFrame) - editorFrame.size.height;
+        }
+
+        CGFloat availableRight = NSMaxX(screenFrame) - NSMaxX(editorFrame) - gap;
+        if (availableRight < desiredHelpWidth) {
+            CGFloat maxShiftLeft = editorFrame.origin.x - screenFrame.origin.x;
+            CGFloat needed = desiredHelpWidth - availableRight;
+            CGFloat shift = MIN(maxShiftLeft, needed);
+            editorFrame.origin.x -= shift;
+            availableRight += shift;
+
+            if (availableRight < desiredHelpWidth) {
+                CGFloat minEditorWidth = editorWindow.minSize.width;
+                CGFloat reduce = desiredHelpWidth - availableRight;
+                CGFloat newWidth = MAX(minEditorWidth, editorFrame.size.width - reduce);
+                availableRight += (editorFrame.size.width - newWidth);
+                editorFrame.size.width = newWidth;
+            }
+        }
+
+        [editorWindow setFrame:editorFrame display:YES animate:YES];
+
+        availableRight = NSMaxX(screenFrame) - NSMaxX(editorFrame) - gap;
+        CGFloat helpWidth = MIN(desiredHelpWidth, availableRight);
+        if (helpWidth < minHelpWidth) {
+            helpWidth = MIN(minHelpWidth, availableRight);
+        }
+        if (helpWidth < 200.0) {
+            helpWidth = MAX(200.0, availableRight);
+        }
+
+        CGFloat helpX = NSMaxX(editorFrame) + gap;
+        CGFloat helpHeight = screenFrame.size.height;
+        CGFloat helpY = screenFrame.origin.y;
+
+        if (helpX + helpWidth > NSMaxX(screenFrame)) {
+            helpX = NSMaxX(screenFrame) - helpWidth;
+        }
+
+        [helpWindow setFrame:NSMakeRect(helpX, helpY, helpWidth, helpHeight)
+                     display:YES
+                     animate:YES];
+    } else {
+        CGFloat helpWidth = MIN(desiredHelpWidth, screenFrame.size.width);
+        CGFloat helpX = NSMaxX(screenFrame) - helpWidth;
+        [helpWindow setFrame:NSMakeRect(helpX,
+                                        screenFrame.origin.y,
+                                        helpWidth,
+                                        screenFrame.size.height)
+                     display:YES
+                     animate:YES];
+    }
+}
+
+@interface MacSchemeHelpWindowController : NSWindowController <WKNavigationDelegate>
+@property (nonatomic, strong) WKWebView *webView;
+@property (nonatomic, strong) NSView *navigationBar;
+@property (nonatomic, strong) NSButton *backButton;
+@property (nonatomic, strong) NSButton *forwardButton;
+@property (nonatomic, strong) NSButton *homeButton;
+- (void)showHomePage;
+- (void)navigateBack;
+- (void)navigateForward;
+- (BOOL)canNavigateBack;
+- (BOOL)canNavigateForward;
+- (void)updateNavigationControls;
+@end
+
+@implementation MacSchemeHelpWindowController
+
+- (instancetype)init {
+    NSRect screenRect = [[NSScreen mainScreen] visibleFrame];
+    const CGFloat defaultWidth = 480.0;
+    const CGFloat defaultHeight = 640.0;
+    NSRect windowRect = NSMakeRect(screenRect.origin.x + (screenRect.size.width - defaultWidth) * 0.5,
+                                   screenRect.origin.y + (screenRect.size.height - defaultHeight) * 0.5,
+                                   defaultWidth,
+                                   defaultHeight);
+
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:windowRect
+                                                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    [window setTitle:@"Scheme Help"];
+
+    self = [super initWithWindow:window];
+    if (self) {
+        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+        NSView *contentView = window.contentView;
+        const CGFloat navBarHeight = 38.0;
+
+        _navigationBar = [[NSView alloc] initWithFrame:NSMakeRect(0,
+                                                                  contentView.bounds.size.height - navBarHeight,
+                                                                  contentView.bounds.size.width,
+                                                                  navBarHeight)];
+        _navigationBar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+        _navigationBar.wantsLayer = YES;
+        _navigationBar.layer.backgroundColor = [NSColor colorWithCalibratedWhite:0.96 alpha:0.96].CGColor;
+
+        _backButton = [NSButton buttonWithTitle:@"Back" target:self action:@selector(navigateBack)];
+        _backButton.frame = NSMakeRect(12, 7, 56, 24);
+        _backButton.bezelStyle = NSBezelStyleRounded;
+
+        _forwardButton = [NSButton buttonWithTitle:@"Forward" target:self action:@selector(navigateForward)];
+        _forwardButton.frame = NSMakeRect(74, 7, 72, 24);
+        _forwardButton.bezelStyle = NSBezelStyleRounded;
+
+        _homeButton = [NSButton buttonWithTitle:@"Home" target:self action:@selector(showHomePage)];
+        _homeButton.frame = NSMakeRect(152, 7, 60, 24);
+        _homeButton.bezelStyle = NSBezelStyleRounded;
+
+        [_navigationBar addSubview:_backButton];
+        [_navigationBar addSubview:_forwardButton];
+        [_navigationBar addSubview:_homeButton];
+
+        _webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0,
+                                                               0,
+                                                               contentView.bounds.size.width,
+                                                               contentView.bounds.size.height - navBarHeight)
+                                      configuration:config];
+        _webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        _webView.navigationDelegate = self;
+        [contentView addSubview:_webView];
+        [contentView addSubview:_navigationBar];
+        [self updateNavigationControls];
+    }
+    return self;
+}
+
+- (void)showHomePage {
+    layoutSchemeHelpWindow(self.window);
+    if (!self.window.isVisible) {
+        [self showWindow:nil];
+    }
+    [self.window makeKeyAndOrderFront:nil];
+
+    NSURL *entryURL = MacSchemeHelpEntryURL();
+    if (entryURL) {
+        NSURL *docsRootURL = [NSURL fileURLWithPath:MacSchemeDocsRootPath() isDirectory:YES];
+        [self.webView loadFileURL:entryURL allowingReadAccessToURL:docsRootURL];
+    } else {
+        [self.webView loadHTMLString:MacSchemeHelpFallbackHTML() baseURL:nil];
+    }
+    [self updateNavigationControls];
+}
+
+- (void)navigateBack {
+    layoutSchemeHelpWindow(self.window);
+    if (!self.window.isVisible) {
+        [self showWindow:nil];
+    }
+    [self.window makeKeyAndOrderFront:nil];
+    if (self.webView.canGoBack) {
+        [self.webView goBack];
+    }
+    [self updateNavigationControls];
+}
+
+- (void)navigateForward {
+    layoutSchemeHelpWindow(self.window);
+    if (!self.window.isVisible) {
+        [self showWindow:nil];
+    }
+    [self.window makeKeyAndOrderFront:nil];
+    if (self.webView.canGoForward) {
+        [self.webView goForward];
+    }
+    [self updateNavigationControls];
+}
+
+- (BOOL)canNavigateBack {
+    return self.webView.canGoBack;
+}
+
+- (BOOL)canNavigateForward {
+    return self.webView.canGoForward;
+}
+
+- (void)updateNavigationControls {
+    self.backButton.enabled = self.webView.canGoBack;
+    self.forwardButton.enabled = self.webView.canGoForward;
+    self.homeButton.enabled = YES;
+}
+
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+    (void)webView;
+    (void)navigation;
+    [self updateNavigationControls];
+}
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    (void)webView;
+    (void)navigation;
+    [self updateNavigationControls];
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    (void)webView;
+    (void)navigation;
+    (void)error;
+    [self updateNavigationControls];
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    (void)webView;
+    (void)navigation;
+    (void)error;
+    [self updateNavigationControls];
+}
+
+@end
+
+static MacSchemeHelpWindowController *gMacSchemeHelpController = nil;
+
 static NSString *CurrentEditorPath(void) {
     size_t pathLen = 0;
     const uint8_t *pathBytes = grid_get_editor_file_path(&pathLen);
@@ -555,12 +1621,134 @@ static BOOL WriteEditorBufferToPath(NSString *path, NSError **outError) {
     grid_free_bytes(textBytes, textLen);
     return [data writeToFile:path options:NSDataWritingAtomic error:outError];
 }
+
+typedef NS_ENUM(NSInteger, MacSchemeThemeId) {
+    MacSchemeThemeFasterBASIC = 0,
+    MacSchemeThemeNeon,
+    MacSchemeThemeRetro,
+    MacSchemeThemeRetroCRT,
+    MacSchemeThemeRetroAmberCRT,
+    MacSchemeThemePaperWhite,
+    MacSchemeThemeC64,
+    MacSchemeThemeDracula,
+    MacSchemeThemeMonokai,
+    MacSchemeThemeSynthwave,
+    MacSchemeThemeTokyoNight,
+    MacSchemeThemeGruvboxDark,
+    MacSchemeThemeSolarizedDarkPlus,
+    MacSchemeThemeNordMidnight,
+    MacSchemeThemeOneDarkVibrant,
+};
+
+static NSArray<NSString *> *MacSchemeThemeNames(void) {
+    static NSArray<NSString *> *names = nil;
+    if (names == nil) {
+        names = @[
+            @"Faster",
+            @"Neon",
+            @"Retro",
+            @"Retro CRT",
+            @"Retro Amber CRT",
+            @"Paper White",
+            @"Commodore 64",
+            @"Dracula",
+            @"Monokai",
+            @"Synthwave '84",
+            @"Tokyo Night",
+            @"Gruvbox Dark",
+            @"Solarized Dark+",
+            @"Nord Midnight",
+            @"One Dark Vibrant",
+        ];
+    }
+    return names;
+}
+
+static NSInteger MacSchemeCurrentTheme(void) {
+    return (NSInteger)grid_get_theme();
+}
+
 static NSMenuItem *AddMenuItem(NSMenu *menu, NSString *title, SEL action, NSString *keyEquivalent, NSEventModifierFlags modifiers, id target) {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:keyEquivalent ?: @""];
     item.keyEquivalentModifierMask = modifiers;
     item.target = target;
     [menu addItem:item];
     return item;
+}
+
+static NSMenuItem *AddFunctionKeyMenuItem(NSMenu *menu, NSString *title, SEL action, unichar functionKey, id target) {
+    NSString *keyEquivalent = [NSString stringWithCharacters:&functionKey length:1];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:keyEquivalent];
+    item.keyEquivalentModifierMask = 0;
+    item.target = target;
+    [menu addItem:item];
+    return item;
+}
+
+static NSMenuItem *AddModifiedFunctionKeyMenuItem(NSMenu *menu, NSString *title, SEL action, unichar functionKey, NSEventModifierFlags modifiers, id target) {
+    NSString *keyEquivalent = [NSString stringWithCharacters:&functionKey length:1];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:keyEquivalent];
+    item.keyEquivalentModifierMask = modifiers;
+    item.target = target;
+    [menu addItem:item];
+    return item;
+}
+
+typedef NS_ENUM(uint32_t, MacSchemeEditorKeyCode) {
+    MacSchemeEditorKeyQ = 12,
+    MacSchemeEditorKeyW = 13,
+    MacSchemeEditorKeyE = 14,
+    MacSchemeEditorKeyB = 11,
+    MacSchemeEditorKeyUp = 126,
+    MacSchemeEditorKeyLeft = 123,
+    MacSchemeEditorKeyRight = 124,
+    MacSchemeEditorKeyEnter = 36,
+    MacSchemeEditorKeyTab = 48,
+};
+
+static const uint32_t MacSchemeGridModShift = 1;
+static const uint32_t MacSchemeGridModControl = 2;
+static const uint32_t MacSchemeGridModAlt = 4;
+static const uint32_t MacSchemeGridModCommand = 8;
+
+static NSInteger MacSchemeGraphicsModeTag(int64_t width, int64_t height) {
+    return (NSInteger)((((uint64_t)width & 0xFFFFu) << 16) | ((uint64_t)height & 0xFFFFu));
+}
+
+static int64_t MacSchemeGraphicsModeWidth(NSInteger tag) {
+    return (int64_t)(((uint64_t)tag >> 16) & 0xFFFFu);
+}
+
+static int64_t MacSchemeGraphicsModeHeight(NSInteger tag) {
+    return (int64_t)((uint64_t)tag & 0xFFFFu);
+}
+
+static void MacSchemeApplyDefaultGraphicsPalette(void) {
+    macscheme_gfx_reset_palette();
+    macscheme_gfx_palette(16, 0, 0, 0);
+    macscheme_gfx_palette(17, 255, 255, 255);
+    macscheme_gfx_palette(18, 255, 0, 0);
+    macscheme_gfx_palette(19, 0, 255, 0);
+    macscheme_gfx_palette(20, 0, 0, 255);
+    macscheme_gfx_palette(21, 255, 255, 0);
+    macscheme_gfx_palette(22, 0, 255, 255);
+    macscheme_gfx_palette(23, 255, 0, 255);
+    macscheme_gfx_palette(24, 255, 128, 0);
+    macscheme_gfx_palette(25, 128, 128, 128);
+    macscheme_gfx_palette(26, 64, 64, 64);
+    macscheme_gfx_palette(27, 255, 128, 128);
+    macscheme_gfx_palette(28, 128, 255, 128);
+    macscheme_gfx_palette(29, 128, 128, 255);
+    macscheme_gfx_palette(30, 255, 220, 128);
+    macscheme_gfx_palette(31, 220, 220, 220);
+}
+
+static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
+    for (int64_t buffer = 0; buffer < 8; buffer++) {
+        macscheme_gfx_set_target(buffer);
+        macscheme_gfx_cls(colourIndex);
+    }
+    macscheme_gfx_set_target(1);
 }
 
 @interface AppDelegate ()
@@ -575,9 +1763,28 @@ static NSMenuItem *AddMenuItem(NSMenu *menu, NSString *title, SEL action, NSStri
 @property (assign) CGFloat savedMainSplitRatio;
 @property (assign) CGFloat savedRightSplitRatio;
 @property (assign) MacSchemeLayoutPreset currentLayoutPreset;
+- (void)showAboutDialog:(id)sender;
+- (void)showSchemeHelp:(id)sender;
+- (void)showSchemeHelpHome:(id)sender;
+- (void)showSchemeHelpBack:(id)sender;
+- (void)showSchemeHelpForward:(id)sender;
+- (void)stopScheme:(id)sender;
 - (BOOL)applyLayoutPreset:(MacSchemeLayoutPreset)preset;
 - (BOOL)setPane:(MacSchemePane)pane visible:(BOOL)visible;
 - (BOOL)isPaneVisible:(MacSchemePane)pane;
+- (void)selectTheme:(id)sender;
+- (void)cycleTheme:(id)sender;
+- (void)clearGraphics:(id)sender;
+- (void)selectGraphicsMode:(id)sender;
+- (void)moveBackwardSexp:(id)sender;
+- (void)moveForwardSexp:(id)sender;
+- (void)selectEnclosingForm:(id)sender;
+- (void)wrapSelectionInParentheses:(id)sender;
+- (void)spliceEnclosingForm:(id)sender;
+- (void)slurpForward:(id)sender;
+- (void)barfForward:(id)sender;
+- (void)reindentCurrentLine:(id)sender;
+- (void)reindentSelectionOrLine:(id)sender;
 @end
 
 @interface GraphicsPlaceholderView : NSView
@@ -772,6 +1979,27 @@ static void appendReplPrompt(NSString *text) {
     NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
     if (!data) return;
     grid_append_repl_prompt((const unsigned char *)data.bytes, data.length);
+}
+
+static void appendReplTextAsync(NSString *text, BOOL isError) {
+    if (text.length == 0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        appendReplText(text, isError);
+    });
+}
+
+void macscheme_repl_write_output(const char *utf8) {
+    if (!utf8) return;
+    NSString *text = [[NSString alloc] initWithUTF8String:utf8];
+    if (!text) return;
+    appendReplTextAsync(text, NO);
+}
+
+void macscheme_repl_write_error(const char *utf8) {
+    if (!utf8) return;
+    NSString *text = [[NSString alloc] initWithUTF8String:utf8];
+    if (!text) return;
+    appendReplTextAsync(text, YES);
 }
 
 static NSString *SchemeObjectToNSString(ptr value) {
@@ -1105,7 +2333,55 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
     [self applyLayoutPreset:MacSchemeLayoutPresetBalanced];
 }
 
+- (void)selectTheme:(id)sender {
+    NSInteger tag = [sender respondsToSelector:@selector(tag)] ? [sender tag] : 0;
+    grid_set_theme((int)tag);
+}
+
+- (void)cycleTheme:(id)sender {
+    (void)sender;
+    NSInteger current = MacSchemeCurrentTheme();
+    NSInteger next = (current + 1) % MacSchemeThemeNames().count;
+    grid_set_theme((int)next);
+}
+
+- (void)clearGraphics:(id)sender {
+    (void)sender;
+    if (macscheme_gfx_screen_active() == 0) return;
+    MacSchemeClearAllGraphicsBuffers(16);
+}
+
+- (void)selectGraphicsMode:(id)sender {
+    NSInteger tag = [sender respondsToSelector:@selector(tag)] ? [sender tag] : 0;
+    int64_t width = MacSchemeGraphicsModeWidth(tag);
+    int64_t height = MacSchemeGraphicsModeHeight(tag);
+    if (width <= 0 || height <= 0) return;
+
+    [self setPane:MacSchemePaneGraphics visible:YES];
+    macscheme_gfx_screen(width, height, 1);
+    MacSchemeApplyDefaultGraphicsPalette();
+    macscheme_gfx_cls(16);
+    macscheme_gfx_flip();
+    [NSApp.mainMenu update];
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    if (menuItem.action == @selector(stopScheme:)) {
+        return self.schemeReady && g_scheme_eval_active != 0;
+    }
+    if (menuItem.action == @selector(moveBackwardSexp:) ||
+        menuItem.action == @selector(moveForwardSexp:) ||
+        menuItem.action == @selector(selectEnclosingForm:) ||
+        menuItem.action == @selector(spliceEnclosingForm:) ||
+        menuItem.action == @selector(slurpForward:) ||
+        menuItem.action == @selector(barfForward:) ||
+        menuItem.action == @selector(reindentCurrentLine:) ||
+        menuItem.action == @selector(reindentSelectionOrLine:)) {
+        return [self editorGridView] != nil;
+    }
+    if (menuItem.action == @selector(wrapSelectionInParentheses:)) {
+        return [self editorGridView] != nil && [self editorHasSelection];
+    }
     if (menuItem.action == @selector(selectLayoutPreset:)) {
         menuItem.state = (menuItem.tag == self.currentLayoutPreset) ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;
@@ -1118,7 +2394,69 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
         }
         return YES;
     }
+    if (menuItem.action == @selector(selectTheme:)) {
+        menuItem.state = (menuItem.tag == MacSchemeCurrentTheme()) ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if (menuItem.action == @selector(clearGraphics:)) {
+        return macscheme_gfx_screen_active() != 0;
+    }
+    if (menuItem.action == @selector(selectGraphicsMode:)) {
+        int64_t width = macscheme_gfx_screen_width();
+        int64_t height = macscheme_gfx_screen_height();
+        menuItem.state = (macscheme_gfx_screen_active() != 0 &&
+                          width == MacSchemeGraphicsModeWidth(menuItem.tag) &&
+                          height == MacSchemeGraphicsModeHeight(menuItem.tag)) ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if (menuItem.action == @selector(showSchemeHelpBack:)) {
+        return gMacSchemeHelpController ? [gMacSchemeHelpController canNavigateBack] : NO;
+    }
+    if (menuItem.action == @selector(showSchemeHelpForward:)) {
+        return gMacSchemeHelpController ? [gMacSchemeHelpController canNavigateForward] : NO;
+    }
     return YES;
+}
+
+- (void)showAboutDialog:(id)sender {
+    (void)sender;
+    NSString *appName = NSProcessInfo.processInfo.processName ?: @"MacScheme";
+    NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"0.1";
+    NSString *build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"1";
+    NSString *applicationVersion = [NSString stringWithFormat:@"%@ (Build %@)\nIncludes Chez Scheme 10.4.0", version, build];
+
+    NSDictionary<NSAboutPanelOptionKey, id> *options = @{
+        NSAboutPanelOptionApplicationName: appName,
+        NSAboutPanelOptionApplicationVersion: applicationVersion,
+        NSAboutPanelOptionCredits: [[NSAttributedString alloc] initWithString:
+            @"Interactive Scheme editor, REPL, and graphics workspace for macOS.\n\nBuilt around Chez Scheme and bundled with Chez Scheme 10.4.0."]
+    };
+
+    [NSApp orderFrontStandardAboutPanelWithOptions:options];
+}
+
+- (void)showSchemeHelp:(id)sender {
+    (void)sender;
+    if (!gMacSchemeHelpController) {
+        gMacSchemeHelpController = [[MacSchemeHelpWindowController alloc] init];
+    }
+    [gMacSchemeHelpController showHomePage];
+}
+
+- (void)showSchemeHelpHome:(id)sender {
+    [self showSchemeHelp:sender];
+}
+
+- (void)showSchemeHelpBack:(id)sender {
+    (void)sender;
+    if (!gMacSchemeHelpController) return;
+    [gMacSchemeHelpController navigateBack];
+}
+
+- (void)showSchemeHelpForward:(id)sender {
+    (void)sender;
+    if (!gMacSchemeHelpController) return;
+    [gMacSchemeHelpController navigateForward];
 }
 
 // ---------------------------------------------------------------------------
@@ -1170,9 +2508,15 @@ static void *scheme_thread_entry(void *arg) {
         }
 
         BOOL isError = NO;
+        g_scheme_eval_active = 1;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [NSApp.mainMenu update];
+        });
         NSString *result = EvaluateSchemeExpression(expr, &isError);
+        g_scheme_eval_active = 0;
 
         dispatch_async(dispatch_get_main_queue(), ^{
+            [NSApp.mainMenu update];
             if (result.length > 0) {
                 NSData *data = [result dataUsingEncoding:NSUTF8StringEncoding];
                 if (data) {
@@ -1195,7 +2539,7 @@ static void *scheme_thread_entry(void *arg) {
     [mainMenu addItem:appRoot];
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:appName];
     [appRoot setSubmenu:appMenu];
-    AddMenuItem(appMenu, [NSString stringWithFormat:@"About %@", appName], @selector(orderFrontStandardAboutPanel:), @"", 0, NSApp);
+    AddMenuItem(appMenu, [NSString stringWithFormat:@"About %@", appName], @selector(showAboutDialog:), @"", 0, self);
     [appMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(appMenu, [NSString stringWithFormat:@"Quit %@", appName], @selector(terminate:), @"q", NSEventModifierFlagCommand, NSApp);
 
@@ -1216,8 +2560,25 @@ static void *scheme_thread_entry(void *arg) {
     AddMenuItem(editMenu, @"Undo", @selector(undo:), @"z", NSEventModifierFlagCommand, self);
     AddMenuItem(editMenu, @"Redo", @selector(redo:), @"Z", NSEventModifierFlagCommand | NSEventModifierFlagShift, self);
     [editMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(editMenu, @"Cut", @selector(cut:), @"x", NSEventModifierFlagCommand, nil);
     AddMenuItem(editMenu, @"Copy", @selector(copy:), @"c", NSEventModifierFlagCommand, nil);
     AddMenuItem(editMenu, @"Paste", @selector(paste:), @"v", NSEventModifierFlagCommand, nil);
+
+    NSMenuItem *sourceRoot = [[NSMenuItem alloc] initWithTitle:@"Source" action:nil keyEquivalent:@""];
+    [mainMenu addItem:sourceRoot];
+    NSMenu *sourceMenu = [[NSMenu alloc] initWithTitle:@"Source"];
+    [sourceRoot setSubmenu:sourceMenu];
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Move Backward S-Expression", @selector(moveBackwardSexp:), NSLeftArrowFunctionKey, NSEventModifierFlagOption, self);
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Move Forward S-Expression", @selector(moveForwardSexp:), NSRightArrowFunctionKey, NSEventModifierFlagOption, self);
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Select Enclosing Form", @selector(selectEnclosingForm:), NSUpArrowFunctionKey, NSEventModifierFlagOption, self);
+    [sourceMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(sourceMenu, @"Wrap Selection in Parentheses", @selector(wrapSelectionInParentheses:), @"w", NSEventModifierFlagControl | NSEventModifierFlagOption, self);
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Splice / Unwrap Enclosing Form", @selector(spliceEnclosingForm:), NSUpArrowFunctionKey, NSEventModifierFlagControl | NSEventModifierFlagOption, self);
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Slurp Forward", @selector(slurpForward:), NSRightArrowFunctionKey, NSEventModifierFlagControl | NSEventModifierFlagOption, self);
+    AddModifiedFunctionKeyMenuItem(sourceMenu, @"Barf Forward", @selector(barfForward:), NSLeftArrowFunctionKey, NSEventModifierFlagControl | NSEventModifierFlagOption, self);
+    [sourceMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(sourceMenu, @"Re-indent Current Line", @selector(reindentCurrentLine:), @"\t", 0, self);
+    AddMenuItem(sourceMenu, @"Re-indent Selection or Line", @selector(reindentSelectionOrLine:), @"q", NSEventModifierFlagOption, self);
 
     NSMenuItem *layoutRoot = [[NSMenuItem alloc] initWithTitle:@"Layout" action:nil keyEquivalent:@""];
     [mainMenu addItem:layoutRoot];
@@ -1236,15 +2597,95 @@ static void *scheme_thread_entry(void *arg) {
     [layoutMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(layoutMenu, @"Reset Layout", @selector(resetLayout:), @"0", NSEventModifierFlagCommand, self);
 
+    NSMenuItem *graphicsRoot = [[NSMenuItem alloc] initWithTitle:@"Graphics" action:nil keyEquivalent:@""];
+    [mainMenu addItem:graphicsRoot];
+    NSMenu *graphicsMenu = [[NSMenu alloc] initWithTitle:@"Graphics"];
+    [graphicsRoot setSubmenu:graphicsMenu];
+    AddMenuItem(graphicsMenu, @"Clear", @selector(clearGraphics:), @"k", NSEventModifierFlagCommand, self);
+    [graphicsMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *classicModesRoot = [[NSMenuItem alloc] initWithTitle:@"Classic" action:nil keyEquivalent:@""];
+    [graphicsMenu addItem:classicModesRoot];
+    NSMenu *classicModesMenu = [[NSMenu alloc] initWithTitle:@"Classic"];
+    [classicModesRoot setSubmenu:classicModesMenu];
+    AddMenuItem(classicModesMenu, @"256 × 160", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(256, 160);
+    AddMenuItem(classicModesMenu, @"320 × 200", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(320, 200);
+    AddMenuItem(classicModesMenu, @"320 × 240", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(320, 240);
+    AddMenuItem(classicModesMenu, @"512 × 320", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(512, 320);
+    AddMenuItem(classicModesMenu, @"640 × 400", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(640, 400);
+    AddMenuItem(classicModesMenu, @"640 × 480", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(640, 480);
+
+    NSMenuItem *wideModesRoot = [[NSMenuItem alloc] initWithTitle:@"Wide" action:nil keyEquivalent:@""];
+    [graphicsMenu addItem:wideModesRoot];
+    NSMenu *wideModesMenu = [[NSMenu alloc] initWithTitle:@"Wide"];
+    [wideModesRoot setSubmenu:wideModesMenu];
+    AddMenuItem(wideModesMenu, @"720 × 480", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(720, 480);
+    AddMenuItem(wideModesMenu, @"800 × 450", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(800, 450);
+    AddMenuItem(wideModesMenu, @"854 × 480", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(854, 480);
+
+    NSMenuItem *themeRoot = [[NSMenuItem alloc] initWithTitle:@"Theme" action:nil keyEquivalent:@""];
+    [mainMenu addItem:themeRoot];
+    NSMenu *themeMenu = [[NSMenu alloc] initWithTitle:@"Theme"];
+    [themeRoot setSubmenu:themeMenu];
+    AddMenuItem(themeMenu, @"Next Theme", @selector(cycleTheme:), @"t", NSEventModifierFlagCommand, self);
+    [themeMenu addItem:[NSMenuItem separatorItem]];
+    for (NSInteger i = 0; i < MacSchemeThemeNames().count; i++) {
+        AddMenuItem(themeMenu, MacSchemeThemeNames()[i], @selector(selectTheme:), @"", 0, self).tag = i;
+    }
+
     NSMenuItem *schemeRoot = [[NSMenuItem alloc] initWithTitle:@"Scheme" action:nil keyEquivalent:@""];
     [mainMenu addItem:schemeRoot];
     NSMenu *schemeMenu = [[NSMenu alloc] initWithTitle:@"Scheme"];
     [schemeRoot setSubmenu:schemeMenu];
+    AddMenuItem(schemeMenu, @"Stop", @selector(stopScheme:), @".", NSEventModifierFlagCommand, self);
+    [schemeMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(schemeMenu, @"Evaluate Selection", @selector(evaluateSelectionOrForm:), @"e", NSEventModifierFlagCommand, self);
     AddMenuItem(schemeMenu, @"Evaluate Top-Level Form", @selector(evaluateTopLevelForm:), @"\r", NSEventModifierFlagCommand, self);
     AddMenuItem(schemeMenu, @"Evaluate Buffer", @selector(evaluateBuffer:), @"b", NSEventModifierFlagCommand, self);
 
+    NSMenuItem *helpRoot = [[NSMenuItem alloc] initWithTitle:@"Help" action:nil keyEquivalent:@""];
+    [mainMenu addItem:helpRoot];
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:@"Help"];
+    [helpRoot setSubmenu:helpMenu];
+    AddFunctionKeyMenuItem(helpMenu, @"Scheme Documentation", @selector(showSchemeHelp:), NSF1FunctionKey, self);
+    [helpMenu addItem:[NSMenuItem separatorItem]];
+    AddMenuItem(helpMenu, @"Back", @selector(showSchemeHelpBack:), @"", 0, self);
+    AddMenuItem(helpMenu, @"Forward", @selector(showSchemeHelpForward:), @"", 0, self);
+    AddMenuItem(helpMenu, @"Home", @selector(showSchemeHelpHome:), @"", 0, self);
+    [NSApp setHelpMenu:helpMenu];
+
     [NSApp setMainMenu:mainMenu];
+    NSLog(@"MacScheme installMainMenu: delegate=%@ mainMenuItems=%ld", NSApp.delegate, (long)NSApp.mainMenu.itemArray.count);
+}
+
+- (SchemeTextGrid *)editorGridView {
+    NSView *view = self.editorSplitItem.viewController.view;
+    return [view isKindOfClass:[SchemeTextGrid class]] ? (SchemeTextGrid *)view : nil;
+}
+
+- (BOOL)editorHasSelection {
+    size_t selectionLength = 0;
+    const uint8_t *selectionBytes = grid_copy_selection_text(0, &selectionLength);
+    if (selectionBytes) {
+        grid_free_bytes(selectionBytes, selectionLength);
+    }
+    return selectionLength > 0;
+}
+
+- (void)focusEditorGrid {
+    [self setPane:MacSchemePaneEditor visible:YES];
+    SchemeTextGrid *editorGrid = [self editorGridView];
+    if (editorGrid) {
+        [self.window makeFirstResponder:editorGrid];
+    }
+}
+
+- (void)dispatchEditorKeyCode:(uint32_t)keyCode modifiers:(uint32_t)modifiers {
+    if (![self editorGridView]) {
+        NSBeep();
+        return;
+    }
+    [self focusEditorGrid];
+    grid_on_key_down(0, keyCode, modifiers);
 }
 
 - (void)openDocument:(id)sender {
@@ -1269,17 +2710,29 @@ static void *scheme_thread_entry(void *arg) {
 
 - (void)evaluateSelectionOrForm:(id)sender {
     (void)sender;
-    grid_on_key_down(0, 14, 8);
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyE modifiers:MacSchemeGridModCommand];
 }
 
 - (void)evaluateTopLevelForm:(id)sender {
     (void)sender;
-    grid_on_key_down(0, 36, 8);
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyEnter modifiers:MacSchemeGridModCommand];
 }
 
 - (void)evaluateBuffer:(id)sender {
     (void)sender;
-    grid_on_key_down(0, 11, 8);
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyB modifiers:MacSchemeGridModCommand];
+}
+
+- (void)stopScheme:(id)sender {
+    (void)sender;
+    if (!self.schemeReady || g_scheme_eval_active == 0) return;
+
+    int killResult = pthread_kill(g_scheme_thread, SIGINT);
+    if (killResult != 0) {
+        NSString *message = [NSString stringWithFormat:@"Interrupt failed (%d)", killResult];
+        appendReplText(message, YES);
+        appendReplText(@"\n", YES);
+    }
 }
 
 - (void)undo:(id)sender {
@@ -1292,10 +2745,61 @@ static void *scheme_thread_entry(void *arg) {
     grid_on_key_down(0, 6, 9);
 }
 
+- (void)moveBackwardSexp:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyLeft modifiers:MacSchemeGridModAlt];
+}
+
+- (void)moveForwardSexp:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyRight modifiers:MacSchemeGridModAlt];
+}
+
+- (void)selectEnclosingForm:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyUp modifiers:MacSchemeGridModAlt];
+}
+
+- (void)wrapSelectionInParentheses:(id)sender {
+    (void)sender;
+    if (![self editorHasSelection]) {
+        NSBeep();
+        return;
+    }
+    [self focusEditorGrid];
+    grid_on_text(0, '(');
+}
+
+- (void)spliceEnclosingForm:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyUp modifiers:MacSchemeGridModControl | MacSchemeGridModAlt];
+}
+
+- (void)slurpForward:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyRight modifiers:MacSchemeGridModControl | MacSchemeGridModAlt];
+}
+
+- (void)barfForward:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyLeft modifiers:MacSchemeGridModControl | MacSchemeGridModAlt];
+}
+
+- (void)reindentCurrentLine:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyTab modifiers:0];
+}
+
+- (void)reindentSelectionOrLine:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyQ modifiers:MacSchemeGridModAlt];
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
     (void)aNotification;
     g_app_delegate = self;
     self.schemeReady = NO;
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self installMainMenu];
 
     // Create a named semaphore for the eval queue.
@@ -1377,12 +2881,17 @@ static void *scheme_thread_entry(void *arg) {
     [self applyLayoutPreset:MacSchemeLayoutPresetBalanced];
     [self.window makeKeyAndOrderFront:nil];
     [self.window orderFrontRegardless];
-    [NSApp activateIgnoringOtherApps:YES];
+    MacSchemeActivateApplication();
     LoadPersistedReplHistory();
     dispatch_async(dispatch_get_main_queue(), ^{
-    [self.window makeKeyAndOrderFront:nil];
-    [self.window orderFrontRegardless];
-    NSLog(@"MacScheme window frame=%@ visible=%d key=%d main=%d", NSStringFromRect(self.window.frame), self.window.isVisible, self.window.isKeyWindow, self.window.isMainWindow);
+        [self.window makeKeyAndOrderFront:nil];
+        [self.window orderFrontRegardless];
+        MacSchemeActivateApplication();
+        NSLog(@"MacScheme startup: delegate=%@ mainMenuItems=%ld active=%d windowVisible=%d key=%d main=%d", NSApp.delegate, (long)NSApp.mainMenu.itemArray.count, NSRunningApplication.currentApplication.active, self.window.isVisible, self.window.isKeyWindow, self.window.isMainWindow);
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        MacSchemeActivateApplication();
+        NSLog(@"MacScheme delayed activate: active=%d frontMenuItems=%ld", NSRunningApplication.currentApplication.active, (long)NSApp.mainMenu.itemArray.count);
     });
 }
 
@@ -1464,8 +2973,58 @@ static void *scheme_thread_entry(void *arg) {
     Sforeign_symbol("macscheme_gfx_screen_width", (void *)macscheme_gfx_screen_width);
     Sforeign_symbol("macscheme_gfx_screen_height", (void *)macscheme_gfx_screen_height);
     Sforeign_symbol("macscheme_gfx_screen_active", (void *)macscheme_gfx_screen_active);
+    Sforeign_symbol("macscheme_gfx_inkey", (void *)macscheme_gfx_inkey);
+    Sforeign_symbol("macscheme_gfx_keydown", (void *)macscheme_gfx_keydown);
     Sforeign_symbol("macscheme_gfx_buffer_width", (void *)macscheme_gfx_buffer_width);
     Sforeign_symbol("macscheme_gfx_buffer_height", (void *)macscheme_gfx_buffer_height);
+    Sforeign_symbol("macscheme_gfx_sprite_load", (void *)macscheme_gfx_sprite_load);
+    Sforeign_symbol("macscheme_gfx_sprite_def", (void *)macscheme_gfx_sprite_def);
+    Sforeign_symbol("macscheme_gfx_sprite_data", (void *)macscheme_gfx_sprite_data);
+    Sforeign_symbol("macscheme_gfx_sprite_commit", (void *)macscheme_gfx_sprite_commit);
+    Sforeign_symbol("macscheme_gfx_sprite_row_ascii", (void *)macscheme_gfx_sprite_row_ascii);
+    Sforeign_symbol("macscheme_gfx_sprite_begin", (void *)macscheme_gfx_sprite_begin);
+    Sforeign_symbol("macscheme_gfx_sprite_end", (void *)macscheme_gfx_sprite_end);
+    Sforeign_symbol("macscheme_gfx_sprite_palette", (void *)macscheme_gfx_sprite_palette);
+    Sforeign_symbol("macscheme_gfx_sprite_std_pal", (void *)macscheme_gfx_sprite_std_pal);
+    Sforeign_symbol("macscheme_gfx_sprite_frames", (void *)macscheme_gfx_sprite_frames);
+    Sforeign_symbol("macscheme_gfx_sprite_set_frame", (void *)macscheme_gfx_sprite_set_frame);
+    Sforeign_symbol("macscheme_gfx_sprite", (void *)macscheme_gfx_sprite);
+    Sforeign_symbol("macscheme_gfx_sprite_pos", (void *)macscheme_gfx_sprite_pos);
+    Sforeign_symbol("macscheme_gfx_sprite_move", (void *)macscheme_gfx_sprite_move);
+    Sforeign_symbol("macscheme_gfx_sprite_rot", (void *)macscheme_gfx_sprite_rot);
+    Sforeign_symbol("macscheme_gfx_sprite_scale", (void *)macscheme_gfx_sprite_scale);
+    Sforeign_symbol("macscheme_gfx_sprite_anchor", (void *)macscheme_gfx_sprite_anchor);
+    Sforeign_symbol("macscheme_gfx_sprite_show", (void *)macscheme_gfx_sprite_show);
+    Sforeign_symbol("macscheme_gfx_sprite_hide", (void *)macscheme_gfx_sprite_hide);
+    Sforeign_symbol("macscheme_gfx_sprite_flip", (void *)macscheme_gfx_sprite_flip);
+    Sforeign_symbol("macscheme_gfx_sprite_alpha", (void *)macscheme_gfx_sprite_alpha);
+    Sforeign_symbol("macscheme_gfx_sprite_frame", (void *)macscheme_gfx_sprite_frame);
+    Sforeign_symbol("macscheme_gfx_sprite_animate", (void *)macscheme_gfx_sprite_animate);
+    Sforeign_symbol("macscheme_gfx_sprite_priority", (void *)macscheme_gfx_sprite_priority);
+    Sforeign_symbol("macscheme_gfx_sprite_blend", (void *)macscheme_gfx_sprite_blend);
+    Sforeign_symbol("macscheme_gfx_sprite_remove", (void *)macscheme_gfx_sprite_remove);
+    Sforeign_symbol("macscheme_gfx_sprite_remove_all", (void *)macscheme_gfx_sprite_remove_all);
+    Sforeign_symbol("macscheme_gfx_sprite_fx", (void *)macscheme_gfx_sprite_fx);
+    Sforeign_symbol("macscheme_gfx_sprite_fx_param", (void *)macscheme_gfx_sprite_fx_param);
+    Sforeign_symbol("macscheme_gfx_sprite_fx_colour", (void *)macscheme_gfx_sprite_fx_colour);
+    Sforeign_symbol("macscheme_gfx_sprite_glow", (void *)macscheme_gfx_sprite_glow);
+    Sforeign_symbol("macscheme_gfx_sprite_outline", (void *)macscheme_gfx_sprite_outline);
+    Sforeign_symbol("macscheme_gfx_sprite_shadow", (void *)macscheme_gfx_sprite_shadow);
+    Sforeign_symbol("macscheme_gfx_sprite_tint", (void *)macscheme_gfx_sprite_tint);
+    Sforeign_symbol("macscheme_gfx_sprite_flash", (void *)macscheme_gfx_sprite_flash);
+    Sforeign_symbol("macscheme_gfx_sprite_fx_off", (void *)macscheme_gfx_sprite_fx_off);
+    Sforeign_symbol("macscheme_gfx_sprite_pal_override", (void *)macscheme_gfx_sprite_pal_override);
+    Sforeign_symbol("macscheme_gfx_sprite_pal_reset", (void *)macscheme_gfx_sprite_pal_reset);
+    Sforeign_symbol("macscheme_gfx_sprite_x", (void *)macscheme_gfx_sprite_x);
+    Sforeign_symbol("macscheme_gfx_sprite_y", (void *)macscheme_gfx_sprite_y);
+    Sforeign_symbol("macscheme_gfx_sprite_rotation", (void *)macscheme_gfx_sprite_rotation);
+    Sforeign_symbol("macscheme_gfx_sprite_visible", (void *)macscheme_gfx_sprite_visible);
+    Sforeign_symbol("macscheme_gfx_sprite_current_frame", (void *)macscheme_gfx_sprite_current_frame);
+    Sforeign_symbol("macscheme_gfx_sprite_hit", (void *)macscheme_gfx_sprite_hit);
+    Sforeign_symbol("macscheme_gfx_sprite_count", (void *)macscheme_gfx_sprite_count);
+    Sforeign_symbol("macscheme_gfx_sprite_collide", (void *)macscheme_gfx_sprite_collide);
+    Sforeign_symbol("macscheme_gfx_sprite_overlap", (void *)macscheme_gfx_sprite_overlap);
+    Sforeign_symbol("macscheme_gfx_sprite_sync", (void *)macscheme_gfx_sprite_sync);
     Sforeign_symbol("macscheme_layout_set", (void *)macscheme_layout_set);
     Sforeign_symbol("macscheme_layout_show_pane", (void *)macscheme_layout_show_pane);
     Sforeign_symbol("macscheme_layout_hide_pane", (void *)macscheme_layout_hide_pane);
@@ -1473,16 +3032,99 @@ static void *scheme_thread_entry(void *arg) {
     Sforeign_symbol("macscheme_layout_reset", (void *)macscheme_layout_reset);
     Sforeign_symbol("macscheme_layout_current", (void *)macscheme_layout_current);
     Sforeign_symbol("macscheme_layout_pane_visible", (void *)macscheme_layout_pane_visible);
+    Sforeign_symbol("snd_init", (void *)snd_init);
+    Sforeign_symbol("snd_shutdown", (void *)snd_shutdown);
+    Sforeign_symbol("snd_is_init", (void *)snd_is_init);
+    Sforeign_symbol("snd_stop_all", (void *)snd_stop_all);
+    Sforeign_symbol("snd_beep", (void *)snd_beep);
+    Sforeign_symbol("snd_zap", (void *)snd_zap);
+    Sforeign_symbol("snd_explode", (void *)snd_explode);
+    Sforeign_symbol("snd_big_explosion", (void *)snd_big_explosion);
+    Sforeign_symbol("snd_small_explosion", (void *)snd_small_explosion);
+    Sforeign_symbol("snd_distant_explosion", (void *)snd_distant_explosion);
+    Sforeign_symbol("snd_metal_explosion", (void *)snd_metal_explosion);
+    Sforeign_symbol("snd_bang", (void *)snd_bang);
+    Sforeign_symbol("snd_coin", (void *)snd_coin);
+    Sforeign_symbol("snd_jump", (void *)snd_jump);
+    Sforeign_symbol("snd_powerup", (void *)snd_powerup);
+    Sforeign_symbol("snd_hurt", (void *)snd_hurt);
+    Sforeign_symbol("snd_shoot", (void *)snd_shoot);
+    Sforeign_symbol("snd_click", (void *)snd_click);
+    Sforeign_symbol("snd_blip", (void *)snd_blip);
+    Sforeign_symbol("snd_pickup", (void *)snd_pickup);
+    Sforeign_symbol("snd_sweep_up", (void *)snd_sweep_up);
+    Sforeign_symbol("snd_sweep_down", (void *)snd_sweep_down);
+    Sforeign_symbol("snd_random_beep", (void *)snd_random_beep);
+    Sforeign_symbol("snd_tone", (void *)snd_tone);
+    Sforeign_symbol("snd_note", (void *)snd_note);
+    Sforeign_symbol("snd_noise", (void *)snd_noise);
+    Sforeign_symbol("snd_fm", (void *)snd_fm);
+    Sforeign_symbol("snd_filtered_tone", (void *)snd_filtered_tone);
+    Sforeign_symbol("snd_filtered_note", (void *)snd_filtered_note);
+    Sforeign_symbol("snd_reverb", (void *)snd_reverb);
+    Sforeign_symbol("snd_delay", (void *)snd_delay);
+    Sforeign_symbol("snd_distortion", (void *)snd_distortion);
+    Sforeign_symbol("snd_play", (void *)snd_play);
+    Sforeign_symbol("snd_play_simple", (void *)snd_play_simple);
+    Sforeign_symbol("snd_stop", (void *)snd_stop);
+    Sforeign_symbol("snd_stop_one", (void *)snd_stop_one);
+    Sforeign_symbol("snd_is_playing", (void *)snd_is_playing);
+    Sforeign_symbol("snd_get_duration", (void *)snd_get_duration);
+    Sforeign_symbol("snd_free", (void *)snd_free);
+    Sforeign_symbol("snd_free_all", (void *)snd_free_all);
+    Sforeign_symbol("snd_set_volume", (void *)snd_set_volume);
+    Sforeign_symbol("snd_get_volume", (void *)snd_get_volume);
+    Sforeign_symbol("snd_exists", (void *)snd_exists);
+    Sforeign_symbol("snd_count", (void *)snd_count);
+    Sforeign_symbol("snd_mem", (void *)snd_mem);
+    Sforeign_symbol("snd_note_to_freq", (void *)snd_note_to_freq);
+    Sforeign_symbol("snd_freq_to_note", (void *)snd_freq_to_note);
+    Sforeign_symbol("snd_export_wav", (void *)scheme_snd_export_wav);
+    Sforeign_symbol("mus_play", (void *)scheme_mus_play);
+    Sforeign_symbol("mus_play_simple", (void *)scheme_mus_play_simple);
+    Sforeign_symbol("mus_load", (void *)scheme_mus_load);
+    Sforeign_symbol("mus_load_compiled", (void *)mus_load_compiled);
+    Sforeign_symbol("mus_play_id", (void *)mus_play_id);
+    Sforeign_symbol("mus_play_id_simple", (void *)mus_play_id_simple);
+    Sforeign_symbol("mus_stop", (void *)mus_stop);
+    Sforeign_symbol("mus_pause", (void *)mus_pause);
+    Sforeign_symbol("mus_resume", (void *)mus_resume);
+    Sforeign_symbol("mus_set_volume", (void *)mus_set_volume);
+    Sforeign_symbol("mus_get_volume", (void *)mus_get_volume);
+    Sforeign_symbol("mus_free", (void *)mus_free);
+    Sforeign_symbol("mus_free_all", (void *)mus_free_all);
+    Sforeign_symbol("mus_is_playing", (void *)mus_is_playing);
+    Sforeign_symbol("mus_is_playing_id", (void *)mus_is_playing_id);
+    Sforeign_symbol("mus_state", (void *)mus_state);
+    Sforeign_symbol("mus_exists", (void *)mus_exists);
+    Sforeign_symbol("mus_count", (void *)mus_count);
+    Sforeign_symbol("mus_mem", (void *)mus_mem);
+    Sforeign_symbol("mus_get_title", (void *)mus_get_title);
+    Sforeign_symbol("mus_get_composer", (void *)mus_get_composer);
+    Sforeign_symbol("mus_get_key", (void *)mus_get_key);
+    Sforeign_symbol("mus_get_tempo", (void *)mus_get_tempo);
+    Sforeign_symbol("mus_get_compiled_blob_info", (void *)mus_get_compiled_blob_info);
+    Sforeign_symbol("mus_render", (void *)scheme_mus_render);
+    Sforeign_symbol("mus_render_simple", (void *)scheme_mus_render_simple);
+    Sforeign_symbol("mus_render_wav", (void *)scheme_mus_render_wav);
+    Sforeign_symbol("mus_export_midi", (void *)scheme_mus_export_midi);
+        Sforeign_symbol("macscheme_repl_write_output", (void *)macscheme_repl_write_output);
+        Sforeign_symbol("macscheme_repl_write_error", (void *)macscheme_repl_write_error);
+        ptr repl_ports = Scall1(Stop_level_value(Sstring_to_symbol("eval")),
+                    Scall1(Stop_level_value(Sstring_to_symbol("read")),
+                        Scall1(Stop_level_value(Sstring_to_symbol("open-input-string")),
+                            Sstring("(begin (define macscheme-repl-write-output (foreign-procedure \"macscheme_repl_write_output\" (string) void)) (define macscheme-repl-write-error (foreign-procedure \"macscheme_repl_write_error\" (string) void)) (define (macscheme-make-repl-port writer name) (make-output-port (lambda (msg . args) (case msg ((write-char) (writer (string (car args)))) ((block-write) (let ((str (cadr args)) (count (caddr args))) (when (> count 0) (writer (substring str 0 count))))) ((flush-output-port clear-output-port) (void)) ((close-port) (mark-port-closed! (car args))) ((port-name) name) (else (void)))) \"\")) (define macscheme-gui-output-port (macscheme-make-repl-port macscheme-repl-write-output \"macscheme-stdout\")) (define macscheme-gui-error-port (macscheme-make-repl-port macscheme-repl-write-error \"macscheme-stderr\")))"))));
+        (void)repl_ports;
     ptr eval_string = Scall1(Stop_level_value(Sstring_to_symbol("eval")),
                              Scall1(Stop_level_value(Sstring_to_symbol("read")),
                                     Scall1(Stop_level_value(Sstring_to_symbol("open-input-string")),
-                                           Sstring("(lambda (s) (guard (ex [else (list #t (with-output-to-string (lambda () (display-condition ex))))]) (list #f (with-output-to-string (lambda () (write (eval (read (open-input-string s)) (interaction-environment))))))))"))));
+                Sstring("(lambda (s) (call/cc (lambda (interrupt) (parameterize ((keyboard-interrupt-handler (lambda () (interrupt (list #t \"Interrupted\")))) (console-output-port macscheme-gui-output-port) (current-output-port macscheme-gui-output-port) (console-error-port macscheme-gui-error-port) (current-error-port macscheme-gui-error-port)) (guard (ex [else (list #t (with-output-to-string (lambda () (display-condition ex))))]) (let ((port (open-input-string s))) (let loop ((last (void)) (saw? #f)) (let ((form (read port))) (if (eof-object? form) (list #f (if saw? (with-output-to-string (lambda () (write last))) \"\")) (loop (eval form (interaction-environment)) #t))))))))))"))));
     Sset_top_level_value(Sstring_to_symbol("macscheme-eval-string"), eval_string);
 
     ptr load_string = Scall1(Stop_level_value(Sstring_to_symbol("eval")),
                              Scall1(Stop_level_value(Sstring_to_symbol("read")),
                                     Scall1(Stop_level_value(Sstring_to_symbol("open-input-string")),
-                                           Sstring("(lambda (path) (guard (ex [else (list #t (with-output-to-string (lambda () (display-condition ex))))]) (with-input-from-file path (lambda () (let loop ((last (void)) (saw? #f)) (let ((form (read))) (if (eof-object? form) (list #f (if saw? (with-output-to-string (lambda () (write last))) \"\")) (loop (eval form (interaction-environment)) #t))))))))"))));
+                     Sstring("(lambda (path) (call/cc (lambda (interrupt) (parameterize ((keyboard-interrupt-handler (lambda () (interrupt (list #t \"Interrupted\")))) (console-output-port macscheme-gui-output-port) (current-output-port macscheme-gui-output-port) (console-error-port macscheme-gui-error-port) (current-error-port macscheme-gui-error-port)) (guard (ex [else (list #t (with-output-to-string (lambda () (display-condition ex))))]) (with-input-from-file path (lambda () (let loop ((last (void)) (saw? #f)) (let ((form (read))) (if (eof-object? form) (list #f (if saw? (with-output-to-string (lambda () (write last))) \"\")) (loop (eval form (interaction-environment)) #t)))))))))))"))));
     Sset_top_level_value(Sstring_to_symbol("macscheme-load-file"), load_string);
 
         ptr completion_string = Scall1(Stop_level_value(Sstring_to_symbol("eval")),
@@ -1518,8 +3160,11 @@ static void *scheme_thread_entry(void *arg) {
 - (void)openEditorFile {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.title = @"Open Scheme File";
-    panel.allowedContentTypes = MacSchemeAllowedContentTypes();
-    panel.allowsOtherFileTypes = YES;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    panel.allowedFileTypes = MacSchemeAllowedFileExtensions();
+#pragma clang diagnostic pop
+    panel.allowsOtherFileTypes = NO;
     panel.canChooseFiles = YES;
     panel.canChooseDirectories = NO;
 
@@ -1572,7 +3217,11 @@ static void *scheme_thread_entry(void *arg) {
 - (void)saveEditorFileAs {
     NSSavePanel *panel = [NSSavePanel savePanel];
     panel.title = @"Save Scheme File As";
-    panel.allowedContentTypes = MacSchemeAllowedContentTypes();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    panel.allowedFileTypes = MacSchemeAllowedFileExtensions();
+#pragma clang diagnostic pop
+    panel.allowsOtherFileTypes = NO;
 
     NSString *existingPath = CurrentEditorPath();
     if (existingPath) {

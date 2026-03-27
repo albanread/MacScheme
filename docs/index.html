@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacScheme Help</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --card: #192029;
+      --fg: #eef2f7;
+      --muted: #9db0c3;
+      --accent: #68b5ff;
+      --accent2: #8df0c8;
+      --accent3: #ffd36a;
+      --border: #2b3744;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0d1117, #111922 45%, #101419);
+      color: var(--fg);
+    }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 2.25rem;
+    }
+    p {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .card {
+      display: block;
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(25, 32, 41, 0.92);
+      color: inherit;
+      text-decoration: none;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .panel {
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(25, 32, 41, 0.92);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+    .eyebrow {
+      color: var(--accent2);
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .title {
+      margin: 8px 0 10px;
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+    .quick-list {
+      margin: 14px 0 0;
+      padding-left: 1.2rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 0.28rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(255, 211, 106, 0.12);
+      color: var(--accent3);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    code {
+      color: var(--fg);
+      background: rgba(255,255,255,0.06);
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+    }
+    @media (max-width: 760px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">MacScheme</div>
+    <h1>Help & Reference</h1>
+    <p>MacScheme combines a Scheme editor, REPL, graphics runtime, sprite tools, and audio/music helpers in one app. This help home is the quickest path into the built-in workflow and the bundled language references.</p>
+
+    <div class="hero">
+      <section class="panel">
+        <div class="eyebrow">Start Here</div>
+        <div class="title">Working in MacScheme</div>
+        <p>Use the editor pane for source files, the REPL for interactive evaluation, and the graphics/audio procedures for immediate feedback while you iterate.</p>
+        <ul class="quick-list">
+          <li>Evaluate forms in the REPL to explore APIs incrementally.</li>
+          <li>Open the graphics screen with <code>gfx-screen</code>, then draw, animate, or create sprites.</li>
+          <li>Use <code>gfx-sprite</code> to place a sprite instance; new instances are visible immediately by default.</li>
+          <li>Use <code>sound-*</code> and <code>music-*</code> procedures for quick effects, playback, and rendering.</li>
+          <li>Browse the full language and Chez implementation docs from the cards below.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <div class="eyebrow">Built In</div>
+        <div class="title">What this viewer includes</div>
+        <p>The packaged help focuses on MacScheme and ships with offline language references so the app stays self-contained.</p>
+        <div class="badge">Offline docs included</div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <a class="card" href="macscheme/editor-commands.html">
+        <div class="eyebrow">MacScheme Guide</div>
+        <div class="title">Editor Commands</div>
+        <p>Learn the structural editing commands, source menu actions, evaluation shortcuts, and the core refactoring moves built into the editor pane.</p>
+      </a>
+      <a class="card" href="macscheme/graphics.html">
+        <div class="eyebrow">MacScheme Guide</div>
+        <div class="title">Graphics</div>
+        <p>Open the graphics pane, choose common resolutions, draw with the indexed-colour framebuffer API, and understand how presentation works.</p>
+      </a>
+      <a class="card" href="macscheme/sprites.html">
+        <div class="eyebrow">MacScheme Guide</div>
+        <div class="title">Sprites</div>
+        <p>Create sprite definitions from rows or drawing commands, animate instances, and use the sprite-focused examples bundled with MacScheme.</p>
+      </a>
+      <a class="card" href="tspl4/index.html">
+        <div class="eyebrow">Language</div>
+        <div class="title">The Scheme Programming Language</div>
+        <p>Read the core language guide with chapters, examples, forms, and reference material for day-to-day Scheme programming.</p>
+      </a>
+      <a class="card" href="csug/csug.html">
+        <div class="eyebrow">Implementation</div>
+        <div class="title">Chez Scheme User's Guide</div>
+        <p>Dive into libraries, runtime behavior, threads, debugging, and other Chez-specific details that MacScheme builds on.</p>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,112 @@
+(gfx-screen 720 480 1)
+(gfx-reset)
+
+(define (midpoint n)
+  (quotient n 2))
+
+(define (make-disc-sprite! def-id size fill outline)
+  (let ((center (midpoint size))
+        (radius (- (midpoint size) 2)))
+    (gfx-sprite-def def-id size size)
+    (with-sprite-canvas def-id
+      (gfx-cls 0)
+      (gfx-circle center center radius fill)
+      (gfx-circle-outline center center (+ radius 1) outline))))
+
+(define (make-box-sprite! def-id w h fill outline accent)
+  (gfx-sprite-def def-id w h)
+  (with-sprite-canvas def-id
+    (gfx-cls 0)
+    (gfx-rect 1 1 (- w 2) (- h 2) fill)
+    (gfx-rect-outline 0 0 w h outline)
+    (gfx-line 2 2 (- w 3) (- h 3) accent)
+    (gfx-line 2 (- h 3) (- w 3) 2 accent)))
+
+(define (make-triangle-sprite! def-id w h fill outline)
+  (gfx-sprite-def def-id w h)
+  (with-sprite-canvas def-id
+    (gfx-cls 0)
+    (gfx-triangle (midpoint w) 1 1 (- h 2) (- w 2) (- h 2) fill)
+    (gfx-triangle-outline (midpoint w) 0 0 (- h 1) (- w 1) (- h 1) outline)))
+
+(define (make-pill-sprite! def-id w h fill outline accent)
+  (let ((r (- (midpoint h) 2)))
+    (gfx-sprite-def def-id w h)
+    (with-sprite-canvas def-id
+      (gfx-cls 0)
+      (gfx-rect (+ r 1) 1 (- w (* 2 (+ r 1))) (- h 2) fill)
+      (gfx-circle (+ r 1) (midpoint h) r fill)
+      (gfx-circle (- w (+ r 2)) (midpoint h) r fill)
+      (gfx-rect-outline (+ r 1) 1 (- w (* 2 (+ r 1))) (- h 2) outline)
+      (gfx-circle-outline (+ r 1) (midpoint h) (+ r 1) outline)
+      (gfx-circle-outline (- w (+ r 2)) (midpoint h) (+ r 1) outline)
+      (gfx-line (+ r 4) (midpoint h) (- w (+ r 5)) (midpoint h) accent))))
+
+(make-disc-sprite! 0 12 2 3)
+(gfx-sprite-palette 0 2 255 210 60)
+(gfx-sprite-palette 0 3 255 120 60)
+
+(make-box-sprite! 1 18 12 4 2 3)
+(gfx-sprite-palette 1 2 250 250 250)
+(gfx-sprite-palette 1 3 255 120 180)
+(gfx-sprite-palette 1 4 120 210 255)
+
+(make-triangle-sprite! 2 20 18 5 2)
+(gfx-sprite-palette 2 2 255 245 245)
+(gfx-sprite-palette 2 5 120 255 160)
+
+(make-pill-sprite! 3 26 14 6 2 3)
+(gfx-sprite-palette 3 2 255 255 255)
+(gfx-sprite-palette 3 3 255 180 90)
+(gfx-sprite-palette 3 6 120 170 255)
+
+(gfx-sprite 0 0 40 70)
+(gfx-sprite 1 1 160 120)
+(gfx-sprite 2 2 280 80)
+(gfx-sprite 3 3 420 160)
+
+(define (bounce-axis pos delta low high radius)
+  (let ((next (+ pos delta)))
+    (cond
+      ((< (- next radius) low) (values (+ low radius) (- delta)))
+      ((> (+ next radius) high) (values (- high radius) (- delta)))
+      (else (values next delta)))))
+
+(define (update-shape frame shape)
+  (let ((inst (vector-ref shape 0))
+        (x (vector-ref shape 1))
+        (y (vector-ref shape 2))
+        (dx (vector-ref shape 3))
+        (dy (vector-ref shape 4))
+        (spin (vector-ref shape 5))
+        (rx (vector-ref shape 6))
+        (ry (vector-ref shape 7)))
+    (gfx-sprite-pos inst x y)
+    (gfx-sprite-rot inst (* frame spin))
+    (call-with-values
+      (lambda () (bounce-axis x dx 12 708 rx))
+      (lambda (nx ndx)
+        (call-with-values
+          (lambda () (bounce-axis y dy 36 468 ry))
+          (lambda (ny ndy)
+            (vector inst nx ny ndx ndy spin rx ry)))))))
+
+(let loop ((frame 0)
+           (shapes (list (vector 0 40.0 70.0 2.1 1.6 3.5 8 8)
+                         (vector 1 160.0 120.0 -1.8 1.3 -2.0 11 8)
+                         (vector 2 280.0 80.0 1.2 2.2 2.8 12 11)
+                         (vector 3 420.0 160.0 2.4 -1.4 -1.5 16 9))))
+  (gfx-clear 10 16 34)
+  (gfx-rect 0 0 720 40 17)
+  (gfx-rect 0 410 720 70 26)
+  (gfx-text 14 10 "MacScheme Sprite Shape Demo" 21)
+  (gfx-text-small 14 420 "sprites drawn with circles, rectangles, triangles, and lines" 30)
+  (gfx-text-small 14 440 "base sprite sizes: 12x12, 18x12, 20x18, 26x14" 29)
+
+  (let ((next-shapes (map (lambda (shape) (update-shape frame shape)) shapes)))
+    (gfx-sprite-sync)
+    (gfx-flip)
+    (gfx-wait 1)
+    (if (< frame 900)
+        (loop (+ frame 1) next-shapes)
+        'done)))

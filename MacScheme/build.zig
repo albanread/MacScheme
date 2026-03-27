@@ -28,6 +28,39 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    exe.addCSourceFiles(.{
+        .files = &.{
+            "src/vendor/macgui/audio/SynthEngine.cpp",
+            "src/vendor/macgui/audio/SoundBank.cpp",
+            "src/vendor/macgui/audio/MusicBank.cpp",
+            "src/vendor/macgui/audio/CoreAudioEngine.cpp",
+            "src/vendor/macgui/audio/VoiceController.cpp",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-fno-exceptions",
+            "-fno-rtti",
+            "-Wall",
+            "-Wno-unused-parameter",
+        },
+    });
+
+    exe.addCSourceFiles(.{
+        .files = &.{
+            "src/vendor/macgui/audio/FBAudioManager.mm",
+            "src/vendor/macgui/audio/fb_audio_shim.mm",
+            "src/vendor/macgui/audio/MidiEngine.mm",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-fobjc-arc",
+            "-fno-exceptions",
+            "-fno-rtti",
+            "-Wall",
+            "-Wno-unused-parameter",
+        },
+    });
+
     const grid_logic = b.addObject(.{
         .name = "grid_logic",
         .root_module = b.createModule(.{
@@ -48,6 +81,26 @@ pub fn build(b: *std.Build) void {
     });
     exe.addObject(macscheme_graphics);
 
+    const macscheme_audio = b.addObject(.{
+        .name = "macscheme_audio_runtime",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/macscheme_audio_runtime.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    exe.addObject(macscheme_audio);
+
+    const abc_ffi = b.addObject(.{
+        .name = "abc_ffi",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vendor/macgui/audio/abc/ffi.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    exe.addObject(abc_ffi);
+
     const vendor_graphics_runtime = b.addObject(.{
         .name = "graphics_runtime",
         .root_module = b.createModule(.{
@@ -61,6 +114,7 @@ pub fn build(b: *std.Build) void {
     // Include directories
     exe.addIncludePath(b.path("chez"));
     exe.addIncludePath(b.path("src"));
+    exe.addIncludePath(b.path("src/vendor/macgui/audio"));
 
     // Static libraries from Chez Scheme
     exe.addLibraryPath(b.path("lib"));
@@ -77,12 +131,19 @@ pub fn build(b: *std.Build) void {
     exe.linkFramework("CoreImage");
     exe.linkFramework("QuartzCore");
     exe.linkFramework("UniformTypeIdentifiers");
+    exe.linkFramework("WebKit");
+    exe.linkFramework("AVFoundation");
+    exe.linkFramework("AudioToolbox");
+    exe.linkFramework("CoreMIDI");
+    exe.linkFramework("CoreAudio");
+    exe.linkFramework("Accelerate");
 
     // Dynamic libraries required by Chez Scheme
     exe.linkSystemLibrary("iconv");
     exe.linkSystemLibrary("ncurses");
     exe.linkSystemLibrary("m");
     exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary("c++");
 
     b.installArtifact(exe);
 

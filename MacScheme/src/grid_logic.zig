@@ -65,6 +65,13 @@ const MAX_VISIBLE_COMPLETIONS = 7;
 
 const Line = std.ArrayListUnmanaged(u32);
 const LineList = std.ArrayListUnmanaged(Line);
+const ReplOutputStyle = enum(u8) {
+    repl,
+    stdout,
+    stderr,
+};
+const ReplStyleLine = std.ArrayListUnmanaged(ReplOutputStyle);
+const ReplStyleLineList = std.ArrayListUnmanaged(ReplStyleLine);
 const ByteList = std.ArrayListUnmanaged(u8);
 const HistoryList = std.ArrayListUnmanaged([]u8);
 const EditorUndoList = std.ArrayListUnmanaged(EditorUndoState);
@@ -99,6 +106,8 @@ const Key = struct {
     const DELETE: u32 = 117;
     const ENTER: u32 = 36;
     const KEYPAD_ENTER: u32 = 76;
+    const PAGE_UP: u32 = 116;
+    const PAGE_DOWN: u32 = 121;
     const HOME: u32 = 115;
     const END: u32 = 119;
     const TAB: u32 = 48;
@@ -117,7 +126,9 @@ const GridTheme = struct {
     bg: [4]u8,
     selection_bg: [4]u8 = .{ 52, 74, 110, 255 },
     cursor_bg: [4]u8,
-    prompt_fg: [4]u8,
+    repl_fg: [4]u8,
+    stdout_fg: [4]u8,
+    stderr_fg: [4]u8,
     // syntax highlight colors (editor only)
     comment_fg: [4]u8 = .{ 100, 120, 100, 255 },
     string_fg: [4]u8 = .{ 230, 180, 80, 255 },
@@ -128,9 +139,79 @@ const GridTheme = struct {
     unbalanced_bg: [4]u8 = .{ 120, 48, 48, 255 },
 };
 
+const ThemeId = enum(u8) {
+    fasterbasic,
+    neon,
+    retro,
+    retro_crt,
+    retro_amber_crt,
+    paper_white,
+    c64,
+    dracula,
+    monokai,
+    synthwave,
+    tokyo_night,
+    gruvbox_dark,
+    solarized_dark_plus,
+    nord_midnight,
+    one_dark_vibrant,
+};
+
+const ThemePalette = struct {
+    editor_bg: u24,
+    editor_fg: u24,
+    terminal_bg: u24,
+    terminal_fg: u24,
+    selection_bg: u24,
+    cursor: u24,
+    repl_fg: u24,
+    stdout_fg: u24,
+    stderr_fg: u24,
+    comment_fg: u24,
+    string_fg: u24,
+    keyword_fg: u24,
+    number_fg: u24,
+    paren_fg: u24,
+    bracket_match_bg: u24,
+    unbalanced_bg: u24,
+};
+
+const THEME_PALETTES = [_]ThemePalette{
+    .{ .editor_bg = 0x0000AA, .editor_fg = 0xFFFFFF, .terminal_bg = 0xF2E7B8, .terminal_fg = 0x4F4427, .selection_bg = 0x555555, .cursor = 0xFFFF55, .repl_fg = 0x00AA55, .stdout_fg = 0x2266CC, .stderr_fg = 0xCC8800, .comment_fg = 0xAAAAAA, .string_fg = 0xAA8800, .keyword_fg = 0xFFFFFF, .number_fg = 0xFF55FF, .paren_fg = 0xC0C0C0, .bracket_match_bg = 0xAA8800, .unbalanced_bg = 0xFF5555 },
+    .{ .editor_bg = 0x1A1A2E, .editor_fg = 0xE0E0E0, .terminal_bg = 0x0D0D1A, .terminal_fg = 0xCCCCCC, .selection_bg = 0x3A3A5E, .cursor = 0x00D4FF, .repl_fg = 0x58E36E, .stdout_fg = 0x66B3FF, .stderr_fg = 0xFFBF5A, .comment_fg = 0x555577, .string_fg = 0xFF8C00, .keyword_fg = 0x00D4FF, .number_fg = 0xFF69B4, .paren_fg = 0x8888AA, .bracket_match_bg = 0xFF8C00, .unbalanced_bg = 0xFF3333 },
+    .{ .editor_bg = 0x1A1200, .editor_fg = 0xFFAA00, .terminal_bg = 0x0D0A00, .terminal_fg = 0xCC8800, .selection_bg = 0xFFAA00, .cursor = 0xFFAA00, .repl_fg = 0x5FD787, .stdout_fg = 0x4A90E2, .stderr_fg = 0xFFB347, .comment_fg = 0x665500, .string_fg = 0xDDAA44, .keyword_fg = 0xFFCC00, .number_fg = 0xFF8800, .paren_fg = 0xAA8800, .bracket_match_bg = 0xFF8800, .unbalanced_bg = 0xFF4400 },
+    .{ .editor_bg = 0x001100, .editor_fg = 0x00FF00, .terminal_bg = 0x000800, .terminal_fg = 0x00FF00, .selection_bg = 0x006600, .cursor = 0x00FF00, .repl_fg = 0x00FF44, .stdout_fg = 0x33A1FF, .stderr_fg = 0xFFB000, .comment_fg = 0x006600, .string_fg = 0x88FF88, .keyword_fg = 0x00FF44, .number_fg = 0x44FF44, .paren_fg = 0x00DD00, .bracket_match_bg = 0x004400, .unbalanced_bg = 0xFF4400 },
+    .{ .editor_bg = 0x1A1200, .editor_fg = 0xFFAA00, .terminal_bg = 0x0D0A00, .terminal_fg = 0xFFAA00, .selection_bg = 0x665500, .cursor = 0xFFBB00, .repl_fg = 0x5FD787, .stdout_fg = 0x4A90E2, .stderr_fg = 0xFFB347, .comment_fg = 0x665500, .string_fg = 0xDDAA44, .keyword_fg = 0xFFCC00, .number_fg = 0xFF9900, .paren_fg = 0xDD9900, .bracket_match_bg = 0x4A3A00, .unbalanced_bg = 0xFF4400 },
+    .{ .editor_bg = 0xF5F5F0, .editor_fg = 0x1A1A1A, .terminal_bg = 0x1A1A1A, .terminal_fg = 0xD8D8D0, .selection_bg = 0x2A2A2A, .cursor = 0x1A1A1A, .repl_fg = 0x5ABF6A, .stdout_fg = 0x5FA8FF, .stderr_fg = 0xFFBF5A, .comment_fg = 0xA0A098, .string_fg = 0x484840, .keyword_fg = 0x0A0A0A, .number_fg = 0x585850, .paren_fg = 0x505048, .bracket_match_bg = 0x808078, .unbalanced_bg = 0x4A4A4A },
+    .{ .editor_bg = 0x40318D, .editor_fg = 0x7869C4, .terminal_bg = 0x000000, .terminal_fg = 0x6C5EB5, .selection_bg = 0x6C5EB5, .cursor = 0x7869C4, .repl_fg = 0x7CFC7C, .stdout_fg = 0x66B3FF, .stderr_fg = 0xFFC04D, .comment_fg = 0x626262, .string_fg = 0x9AE29B, .keyword_fg = 0xFFFFFF, .number_fg = 0xC9D487, .paren_fg = 0xB2B2B2, .bracket_match_bg = 0x6ABFC6, .unbalanced_bg = 0x9F4E44 },
+    .{ .editor_bg = 0x282A36, .editor_fg = 0xF8F8F2, .terminal_bg = 0x1E1F29, .terminal_fg = 0xF8F8F2, .selection_bg = 0x44475A, .cursor = 0xF8F8F2, .repl_fg = 0x50FA7B, .stdout_fg = 0x8BE9FD, .stderr_fg = 0xFFB86C, .comment_fg = 0x6272A4, .string_fg = 0xF1FA8C, .keyword_fg = 0xFF79C6, .number_fg = 0xBD93F9, .paren_fg = 0xF8F8F2, .bracket_match_bg = 0xFFB86C, .unbalanced_bg = 0xFF5555 },
+    .{ .editor_bg = 0x272822, .editor_fg = 0xF8F8F2, .terminal_bg = 0x1A1B16, .terminal_fg = 0xF8F8F2, .selection_bg = 0x49483E, .cursor = 0xF8F8F0, .repl_fg = 0xA6E22E, .stdout_fg = 0x66D9EF, .stderr_fg = 0xFD971F, .comment_fg = 0x75715E, .string_fg = 0xE6DB74, .keyword_fg = 0xF92672, .number_fg = 0xAE81FF, .paren_fg = 0xF8F8F2, .bracket_match_bg = 0xE6DB74, .unbalanced_bg = 0xF92672 },
+    .{ .editor_bg = 0x262335, .editor_fg = 0xF0E4FC, .terminal_bg = 0x181520, .terminal_fg = 0xF0E4FC, .selection_bg = 0x463465, .cursor = 0xFF7EDB, .repl_fg = 0x7FFFD4, .stdout_fg = 0x7FDBFF, .stderr_fg = 0xFEDE5D, .comment_fg = 0x848BBD, .string_fg = 0xFF8B39, .keyword_fg = 0xFF7EDB, .number_fg = 0xF97E72, .paren_fg = 0xB6B1CC, .bracket_match_bg = 0xFF7EDB, .unbalanced_bg = 0xFE4450 },
+    .{ .editor_bg = 0x1A1B2E, .editor_fg = 0xC0CAF5, .terminal_bg = 0x11121D, .terminal_fg = 0xA9B1D6, .selection_bg = 0x2F3060, .cursor = 0x7AA2F7, .repl_fg = 0x9ECE6A, .stdout_fg = 0x7DCFFF, .stderr_fg = 0xFF9E64, .comment_fg = 0x565F89, .string_fg = 0x9ECE6A, .keyword_fg = 0xBB9AF7, .number_fg = 0xFF9E64, .paren_fg = 0x7982B4, .bracket_match_bg = 0xFF9E64, .unbalanced_bg = 0xF7768E },
+    .{ .editor_bg = 0x282828, .editor_fg = 0xEBDBB2, .terminal_bg = 0x1D2021, .terminal_fg = 0xEBDBB2, .selection_bg = 0x504945, .cursor = 0xFE8019, .repl_fg = 0xB8BB26, .stdout_fg = 0x83A598, .stderr_fg = 0xFABD2F, .comment_fg = 0x928374, .string_fg = 0xB8BB26, .keyword_fg = 0xFABD2F, .number_fg = 0xD3869B, .paren_fg = 0xEBDBB2, .bracket_match_bg = 0xFABD2F, .unbalanced_bg = 0xFB4934 },
+    .{ .editor_bg = 0x002B36, .editor_fg = 0xEEE8D5, .terminal_bg = 0x002B36, .terminal_fg = 0xEEE8D5, .selection_bg = 0x0D4F5A, .cursor = 0xB58900, .repl_fg = 0x859900, .stdout_fg = 0x268BD2, .stderr_fg = 0xCB4B16, .comment_fg = 0x586E75, .string_fg = 0x859900, .keyword_fg = 0xB58900, .number_fg = 0xD33682, .paren_fg = 0x93A1A1, .bracket_match_bg = 0xB58900, .unbalanced_bg = 0xDC322F },
+    .{ .editor_bg = 0x2E3440, .editor_fg = 0xE5E9F0, .terminal_bg = 0x242933, .terminal_fg = 0xE5E9F0, .selection_bg = 0x434C5E, .cursor = 0x88C0D0, .repl_fg = 0xA3BE8C, .stdout_fg = 0x81A1C1, .stderr_fg = 0xEBCB8B, .comment_fg = 0x616E88, .string_fg = 0xA3BE8C, .keyword_fg = 0x81A1C1, .number_fg = 0xB48EAD, .paren_fg = 0xD8DEE9, .bracket_match_bg = 0x88C0D0, .unbalanced_bg = 0xBF616A },
+    .{ .editor_bg = 0x21252B, .editor_fg = 0xE6E9EF, .terminal_bg = 0x1C1F24, .terminal_fg = 0xE6E9EF, .selection_bg = 0x3A4049, .cursor = 0x61AFEF, .repl_fg = 0x98C379, .stdout_fg = 0x61AFEF, .stderr_fg = 0xD19A66, .comment_fg = 0x7F848E, .string_fg = 0x98C379, .keyword_fg = 0xC678DD, .number_fg = 0xD19A66, .paren_fg = 0xABB2BF, .bracket_match_bg = 0xE5C07B, .unbalanced_bg = 0xE06C75 },
+};
+
 const EntryPos = struct {
     row: usize,
     col: usize,
+};
+
+const EntryRange = struct {
+    start: EntryPos,
+    end: EntryPos,
+};
+
+const ReplDocPos = struct {
+    row: usize,
+    col: usize,
+};
+
+const ReplDocRange = struct {
+    start: ReplDocPos,
+    end: ReplDocPos,
 };
 
 const EditorRange = struct {
@@ -167,6 +248,7 @@ const GridState = struct {
     viewport_width: f32 = 0,
     viewport_height: f32 = 0,
     backing_scale: f32 = 1,
+    editor_view_row: usize = 0,
     cursor_row: usize = 0,
     cursor_col: usize = 0,
     preferred_col: usize = 0,
@@ -176,6 +258,7 @@ const GridState = struct {
     entry_modified: bool = false,
     instances: std.ArrayListUnmanaged(GlyphInstance) = .{},
     lines: LineList = .{},
+    line_styles: ReplStyleLineList = .{},
     prompt: Line = .{},
     entry: LineList = .{},
     history: HistoryList = .{},
@@ -199,6 +282,12 @@ const GridState = struct {
     editor_modified: bool = false,
     editor_selection_start: ?usize = null,
     editor_selection_end: ?usize = null,
+    editor_selection_anchor: ?usize = null,
+    mouse_editor_anchor: ?usize = null,
+    repl_selection_start: ?ReplDocPos = null,
+    repl_selection_end: ?ReplDocPos = null,
+    repl_selection_anchor: ?ReplDocPos = null,
+    mouse_repl_anchor: ?ReplDocPos = null,
     editor_undo: EditorUndoList = .{},
     editor_redo: EditorUndoList = .{},
 
@@ -207,7 +296,7 @@ const GridState = struct {
         self.initialized = true;
         self.grid_id = grid_id;
 
-        appendEmptyLine(&self.lines) catch unreachable;
+        self.appendEmptyOutputLine() catch unreachable;
 
         if (grid_id == 0) {
             self.ensureEditorBuffer();
@@ -220,6 +309,7 @@ const GridState = struct {
 
     fn deinit(self: *GridState) void {
         freeLineList(&self.lines);
+        freeStyleLineList(&self.line_styles);
         freeLineList(&self.entry);
         self.prompt.deinit(allocator);
         freeHistoryList(&self.history);
@@ -264,11 +354,75 @@ const GridState = struct {
         self.cursor_row = line_col.line;
         self.cursor_col = line_col.col;
         if (update_preferred) self.preferred_col = self.cursor_col;
+        self.ensureEditorCursorVisible(visibleRows(self));
+    }
+
+    fn editorMaxVisibleStartRow(self: *const GridState, rows: usize) usize {
+        const line_count = self.editorLineCount();
+        return if (line_count > rows) line_count - rows else 0;
+    }
+
+    fn ensureEditorCursorVisible(self: *GridState, rows: usize) void {
+        const safe_rows = @max(@as(usize, 1), rows);
+        const max_start = self.editorMaxVisibleStartRow(safe_rows);
+        if (self.editor_view_row > max_start) self.editor_view_row = max_start;
+        if (self.cursor_row < self.editor_view_row) {
+            self.editor_view_row = self.cursor_row;
+        } else if (self.cursor_row >= self.editor_view_row + safe_rows) {
+            self.editor_view_row = self.cursor_row + 1 - safe_rows;
+        }
+        if (self.editor_view_row > max_start) self.editor_view_row = max_start;
+    }
+
+    fn editorScrollViewport(self: *GridState, delta_rows: isize) void {
+        if (delta_rows == 0) return;
+        const rows = visibleRows(self);
+        const max_start = self.editorMaxVisibleStartRow(rows);
+        const current = editorVisibleStartRow(self, rows);
+        var target = @as(isize, @intCast(current)) + delta_rows;
+        if (target < 0) target = 0;
+        const max_target = @as(isize, @intCast(max_start));
+        if (target > max_target) target = max_target;
+        self.editor_view_row = @as(usize, @intCast(target));
+    }
+
+    fn editorMovePage(self: *GridState, direction: isize) void {
+        const rows = visibleRows(self);
+        const line_count = self.editorLineCount();
+        if (line_count == 0) return;
+
+        const page = @max(@as(usize, 1), rows -| 1);
+        const current_top = editorVisibleStartRow(self, rows);
+        const visible_offset = self.cursor_row -| current_top;
+        const max_start = self.editorMaxVisibleStartRow(rows);
+
+        const new_top = if (direction < 0)
+            current_top -| page
+        else
+            @min(current_top + page, max_start);
+
+        const target_row = @min(new_top + visible_offset, line_count - 1);
+        self.editor_view_row = new_top;
+        self.editor_cursor_offset = self.editorBuffer().lineColToOffset(target_row, self.preferred_col);
+        self.syncEditorCursorFromOffset(false);
+    }
+
+    fn editorPageUp(self: *GridState) void {
+        self.editorMovePage(-1);
+    }
+
+    fn editorPageDown(self: *GridState) void {
+        self.editorMovePage(1);
     }
 
     fn clearEditorSelection(self: *GridState) void {
         self.editor_selection_start = null;
         self.editor_selection_end = null;
+    }
+
+    fn clearReplSelection(self: *GridState) void {
+        self.repl_selection_start = null;
+        self.repl_selection_end = null;
     }
 
     fn markEditorEdited(self: *GridState) void {
@@ -331,6 +485,7 @@ const GridState = struct {
         self.editor_cursor_offset = @min(state.cursor_offset, total);
         self.editor_selection_start = if (state.selection_start) |start| @min(start, total) else null;
         self.editor_selection_end = if (state.selection_end) |end| @min(end, total) else null;
+        self.editor_selection_anchor = if (self.editor_selection_start) |start| start else null;
         self.editor_modified = state.modified;
         self.syncEditorCursorFromOffset(true);
     }
@@ -359,6 +514,11 @@ const GridState = struct {
         self.editor_selection_end = end;
     }
 
+    fn setReplSelection(self: *GridState, start: ReplDocPos, end: ReplDocPos) void {
+        self.repl_selection_start = start;
+        self.repl_selection_end = end;
+    }
+
     fn editorSelectionRange(self: *const GridState) ?EditorRange {
         const start = self.editor_selection_start orelse return null;
         const end = self.editor_selection_end orelse return null;
@@ -367,6 +527,49 @@ const GridState = struct {
             .start = @min(start, end),
             .end = @max(start, end),
         };
+    }
+
+    fn replSelectionRange(self: *const GridState) ?ReplDocRange {
+        const start = self.repl_selection_start orelse return null;
+        const end = self.repl_selection_end orelse return null;
+        if (replDocPosCompare(start, end) == 0) return null;
+        return if (replDocPosCompare(start, end) < 0)
+            .{ .start = start, .end = end }
+        else
+            .{ .start = end, .end = start };
+    }
+
+    fn entryMarkedRange(self: *const GridState) ?EntryRange {
+        const mark = self.mark orelse return null;
+        const cursor = EntryPos{ .row = self.entry_cursor_row, .col = self.entry_cursor_col };
+        if (entryPosCompare(mark, cursor) == 0) return null;
+        return if (entryPosCompare(mark, cursor) < 0)
+            .{ .start = mark, .end = cursor }
+        else
+            .{ .start = cursor, .end = mark };
+    }
+
+    fn editorDeleteRange(self: *GridState, start: usize, end: usize, capture_undo: bool) bool {
+        if (end <= start) return false;
+        if (capture_undo) self.pushEditorUndoSnapshot();
+        var buffer = self.editorBuffer();
+        buffer.delete(start, end - start) catch return false;
+        self.editor_cursor_offset = start;
+        self.clearEditorSelection();
+        self.markEditorEdited();
+        self.syncEditorCursorFromOffset(true);
+        return true;
+    }
+
+    fn editorDeleteSelection(self: *GridState, capture_undo: bool) bool {
+        const range = self.editorSelectionRange() orelse return false;
+        return self.editorDeleteRange(range.start, range.end, capture_undo);
+    }
+
+    fn deleteSelectedEntryRange(self: *GridState, capture_kill: bool) bool {
+        const range = self.entryMarkedRange() orelse return false;
+        self.clearReplSelection();
+        return self.deleteRange(range.start, range.end, capture_kill);
     }
 
     fn editorFindEnclosingForm(self: *const GridState, target_start: usize, target_end: usize, skip_exact: bool) ?EditorRange {
@@ -539,11 +742,14 @@ const GridState = struct {
         self.markEditorSaved();
         self.clearEditorUndoHistory();
         self.clearEditorSelection();
+        self.editor_selection_anchor = null;
+        self.mouse_editor_anchor = null;
         self.syncEditorCursorFromOffset(true);
     }
 
     fn insertEditorUtf8(self: *GridState, bytes: []const u8) void {
         self.pushEditorUndoSnapshot();
+        _ = self.editorDeleteSelection(false);
         const cps = ed_buffer.utf8ToCodepoints(allocator, bytes) catch return;
         defer allocator.free(cps);
 
@@ -593,6 +799,7 @@ const GridState = struct {
         }
 
         self.pushEditorUndoSnapshot();
+        _ = self.editorDeleteSelection(false);
         var buffer = self.editorBuffer();
         buffer.insertChar(self.editor_cursor_offset, cp) catch return;
         self.editor_cursor_offset += 1;
@@ -603,6 +810,7 @@ const GridState = struct {
     // Typing an opening delimiter: insert the pair and leave cursor between them.
     fn editorTypedOpenDelimiter(self: *GridState, open: u32, close: u32) void {
         self.pushEditorUndoSnapshot();
+        _ = self.editorDeleteSelection(false);
         var buffer = self.editorBuffer();
         // Insert close at cursor first, then open at the same position (pushing close right).
         buffer.insertChar(self.editor_cursor_offset, close) catch return;
@@ -617,6 +825,10 @@ const GridState = struct {
 
     // Typing a closing delimiter: skip over it if the char at the cursor already is that closer.
     fn editorTypedCloseOrSkip(self: *GridState, close: u32) void {
+        if (self.editorSelectionRange() != null) {
+            self.insertEditorCodepoint(close);
+            return;
+        }
         const buf = self.editorBufferConst();
         if (buf.charAt(self.editor_cursor_offset) == close) {
             self.editor_cursor_offset += 1;
@@ -628,6 +840,10 @@ const GridState = struct {
 
     // Typing a double-quote: skip over if already at ", otherwise insert a pair "".
     fn editorTypedQuote(self: *GridState) void {
+        if (self.editorSelectionRange() != null) {
+            self.insertEditorCodepoint('"');
+            return;
+        }
         const buf = self.editorBufferConst();
         if (buf.charAt(self.editor_cursor_offset) == '"') {
             self.editor_cursor_offset += 1;
@@ -639,6 +855,7 @@ const GridState = struct {
 
     fn insertEditorNewline(self: *GridState) void {
         self.pushEditorUndoSnapshot();
+        _ = self.editorDeleteSelection(false);
         // Compute indent for the new line before inserting.
         const indent = self.editorComputeIndentAtCursor();
         // Insert the newline character.
@@ -1072,6 +1289,7 @@ const GridState = struct {
     }
 
     fn editorBackspace(self: *GridState) void {
+        if (self.editorDeleteSelection(true)) return;
         if (self.editor_cursor_offset == 0) return;
         self.pushEditorUndoSnapshot();
         const buf = self.editorBufferConst();
@@ -1092,6 +1310,7 @@ const GridState = struct {
     }
 
     fn editorDeleteForward(self: *GridState) void {
+        if (self.editorDeleteSelection(true)) return;
         var buffer = self.editorBuffer();
         if (self.editor_cursor_offset >= buffer.length()) return;
 
@@ -1540,7 +1759,8 @@ const GridState = struct {
 
     fn clearOutput(self: *GridState) void {
         freeLineList(&self.lines);
-        appendEmptyLine(&self.lines) catch unreachable;
+        freeStyleLineList(&self.line_styles);
+        self.appendEmptyOutputLine() catch unreachable;
     }
 
     fn replaceEntryFromUtf8(self: *GridState, text: []const u8) void {
@@ -1975,11 +2195,23 @@ const GridState = struct {
         _ = self.deleteRange(start, end, true);
     }
 
+    fn appendEmptyOutputLine(self: *GridState) !void {
+        try self.lines.append(allocator, .{});
+        try self.line_styles.append(allocator, .{});
+    }
+
     fn ensureOutputWritableLine(self: *GridState) *Line {
         if (self.lines.items.len == 0) {
-            appendEmptyLine(&self.lines) catch unreachable;
+            self.appendEmptyOutputLine() catch unreachable;
         }
         return &self.lines.items[self.lines.items.len - 1];
+    }
+
+    fn ensureOutputWritableStyleLine(self: *GridState) *ReplStyleLine {
+        if (self.line_styles.items.len == 0) {
+            self.appendEmptyOutputLine() catch unreachable;
+        }
+        return &self.line_styles.items[self.line_styles.items.len - 1];
     }
 
     fn promptBaseRow(self: *const GridState) usize {
@@ -1989,18 +2221,20 @@ const GridState = struct {
         return self.lines.items.len;
     }
 
-    fn appendOutputCodepoint(self: *GridState, cp: u32) void {
+    fn appendOutputCodepoint(self: *GridState, cp: u32, style: ReplOutputStyle) void {
         if (cp == '\r') return;
         if (cp == '\n') {
             if (self.lines.items.len >= MAX_LINES) return;
-            appendEmptyLine(&self.lines) catch return;
+            self.appendEmptyOutputLine() catch return;
             return;
         }
         var line = self.ensureOutputWritableLine();
+        var style_line = self.ensureOutputWritableStyleLine();
         line.append(allocator, cp) catch {};
+        style_line.append(allocator, style) catch {};
     }
 
-    fn appendOutputUtf8(self: *GridState, bytes: []const u8) void {
+    fn appendOutputUtf8(self: *GridState, bytes: []const u8, style: ReplOutputStyle) void {
         var i: usize = 0;
         while (i < bytes.len) {
             const len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch {
@@ -2012,7 +2246,7 @@ const GridState = struct {
                 i += len;
                 continue;
             };
-            self.appendOutputCodepoint(cp);
+            self.appendOutputCodepoint(cp, style);
             i += len;
         }
     }
@@ -2020,21 +2254,25 @@ const GridState = struct {
     fn appendPromptAndEntryToOutput(self: *GridState) void {
         const base_row = self.promptBaseRow();
         if (base_row == self.lines.items.len) {
-            appendEmptyLine(&self.lines) catch return;
+            self.appendEmptyOutputLine() catch return;
         }
 
         var first_line = &self.lines.items[base_row];
+        const first_style_line = &self.line_styles.items[base_row];
         first_line.appendSlice(allocator, self.prompt.items) catch return;
+        appendStyleSlice(first_style_line, self.prompt.items.len, .repl) catch return;
         first_line.appendSlice(allocator, self.entry.items[0].items) catch return;
+        appendStyleSlice(first_style_line, self.entry.items[0].items.len, .repl) catch return;
 
         var row: usize = 1;
         while (row < self.entry.items.len) : (row += 1) {
-            appendEmptyLine(&self.lines) catch return;
+            self.appendEmptyOutputLine() catch return;
             self.lines.items[self.lines.items.len - 1].appendSlice(allocator, self.entry.items[row].items) catch return;
+            appendStyleSlice(&self.line_styles.items[self.line_styles.items.len - 1], self.entry.items[row].items.len, .repl) catch return;
         }
 
         if (self.lines.items.len == 0 or self.lines.items[self.lines.items.len - 1].items.len != 0) {
-            appendEmptyLine(&self.lines) catch {};
+            self.appendEmptyOutputLine() catch {};
         }
     }
 
@@ -2101,28 +2339,63 @@ var g_atlas: GlyphAtlasInfo = .{
     ._pad = 0,
 };
 var g_grids: [MAX_GRIDS]GridState = .{ .{}, .{} };
+var g_theme_id: ThemeId = .one_dark_vibrant;
+
+fn rgb(hex: u24) [4]u8 {
+    return .{
+        @as(u8, @intCast((hex >> 16) & 0xFF)),
+        @as(u8, @intCast((hex >> 8) & 0xFF)),
+        @as(u8, @intCast(hex & 0xFF)),
+        255,
+    };
+}
+
+fn clearRgb(hex: u24) [4]f32 {
+    return .{
+        @as(f32, @floatFromInt((hex >> 16) & 0xFF)) / 255.0,
+        @as(f32, @floatFromInt((hex >> 8) & 0xFF)) / 255.0,
+        @as(f32, @floatFromInt(hex & 0xFF)) / 255.0,
+        1.0,
+    };
+}
 
 fn themeFor(grid_id: usize) GridTheme {
+    const palette = THEME_PALETTES[@intFromEnum(g_theme_id)];
     return if (grid_id == 0)
         .{
-            .clear = .{ 0.08, 0.09, 0.11, 1.0 },
-            .fg = .{ 235, 239, 244, 255 },
-            .bg = .{ 20, 24, 31, 255 },
-            .cursor_bg = .{ 128, 184, 255, 255 },
-            .prompt_fg = .{ 235, 239, 244, 255 },
-            .comment_fg = .{ 100, 120, 100, 255 },
-            .string_fg = .{ 230, 180, 80, 255 },
-            .keyword_fg = .{ 90, 200, 255, 255 },
-            .number_fg = .{ 180, 255, 140, 255 },
-            .paren_fg = .{ 160, 160, 200, 255 },
+            .clear = clearRgb(palette.editor_bg),
+            .fg = rgb(palette.editor_fg),
+            .bg = rgb(palette.editor_bg),
+            .selection_bg = rgb(palette.selection_bg),
+            .cursor_bg = rgb(palette.cursor),
+            .repl_fg = rgb(palette.repl_fg),
+            .stdout_fg = rgb(palette.stdout_fg),
+            .stderr_fg = rgb(palette.stderr_fg),
+            .comment_fg = rgb(palette.comment_fg),
+            .string_fg = rgb(palette.string_fg),
+            .keyword_fg = rgb(palette.keyword_fg),
+            .number_fg = rgb(palette.number_fg),
+            .paren_fg = rgb(palette.paren_fg),
+            .bracket_match_bg = rgb(palette.bracket_match_bg),
+            .unbalanced_bg = rgb(palette.unbalanced_bg),
         }
     else
         .{
-            .clear = .{ 0.03, 0.09, 0.06, 1.0 },
-            .fg = .{ 193, 255, 193, 255 },
-            .bg = .{ 8, 20, 13, 255 },
-            .cursor_bg = .{ 120, 255, 160, 255 },
-            .prompt_fg = .{ 255, 220, 150, 255 },
+            .clear = clearRgb(palette.terminal_bg),
+            .fg = rgb(palette.terminal_fg),
+            .bg = rgb(palette.terminal_bg),
+            .selection_bg = rgb(palette.selection_bg),
+            .cursor_bg = rgb(palette.cursor),
+            .repl_fg = rgb(palette.repl_fg),
+            .stdout_fg = rgb(palette.stdout_fg),
+            .stderr_fg = rgb(palette.stderr_fg),
+            .comment_fg = rgb(palette.comment_fg),
+            .string_fg = rgb(palette.string_fg),
+            .keyword_fg = rgb(palette.keyword_fg),
+            .number_fg = rgb(palette.number_fg),
+            .paren_fg = rgb(palette.paren_fg),
+            .bracket_match_bg = rgb(palette.bracket_match_bg),
+            .unbalanced_bg = rgb(palette.unbalanced_bg),
         };
 }
 
@@ -2138,6 +2411,19 @@ fn freeLineList(list: *LineList) void {
     for (list.items) |*line| line.deinit(allocator);
     list.deinit(allocator);
     list.* = .{};
+}
+
+fn freeStyleLineList(list: *ReplStyleLineList) void {
+    for (list.items) |*line| line.deinit(allocator);
+    list.deinit(allocator);
+    list.* = .{};
+}
+
+fn appendStyleSlice(line: *ReplStyleLine, count: usize, style: ReplOutputStyle) !void {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        try line.append(allocator, style);
+    }
 }
 
 fn freeHistoryList(list: *HistoryList) void {
@@ -2285,6 +2571,218 @@ fn visibleRows(grid: *const GridState) usize {
     return @max(1, @as(usize, @intFromFloat(@floor(grid.viewport_height / g_atlas.cell_height))));
 }
 
+fn editorVisibleStartRow(grid: *const GridState, rows: usize) usize {
+    const line_count = grid.editorLineCount();
+    if (line_count <= rows) return 0;
+    return @min(grid.editor_view_row, line_count - rows);
+}
+
+fn replCursorDocPos(grid: *const GridState) ReplDocPos {
+    const prompt_base_row = grid.promptBaseRow();
+    return .{
+        .row = prompt_base_row + grid.entry_cursor_row,
+        .col = if (grid.entry_cursor_row == 0) grid.prompt.items.len + grid.entry_cursor_col else grid.entry_cursor_col,
+    };
+}
+
+fn replSelectableRowCount(grid: *const GridState) usize {
+    return grid.promptBaseRow() + grid.entry.items.len;
+}
+
+fn replVisibleStartRow(grid: *const GridState, rows: usize) usize {
+    const cursor_doc_row = replCursorDocPos(grid).row;
+    return if (cursor_doc_row + 1 > rows) cursor_doc_row + 1 - rows else 0;
+}
+
+fn replDocLineLength(grid: *const GridState, doc_row: usize) usize {
+    const prompt_base_row = grid.promptBaseRow();
+    if (doc_row < prompt_base_row) {
+        return if (doc_row < grid.lines.items.len) grid.lines.items[doc_row].items.len else 0;
+    }
+
+    const entry_row = doc_row - prompt_base_row;
+    if (entry_row >= grid.entry.items.len) return 0;
+    return if (entry_row == 0) grid.prompt.items.len + grid.entry.items[0].items.len else grid.entry.items[entry_row].items.len;
+}
+
+fn editorOffsetForScreenCell(grid: *const GridState, row: usize, col: usize) usize {
+    const buf = grid.editorBufferConst();
+    const line_count = @max(@as(usize, 1), buf.lineCount());
+    const doc_row = @min(editorVisibleStartRow(grid, visibleRows(grid)) + row, line_count - 1);
+    return buf.lineColToOffset(doc_row, col);
+}
+
+fn replDocPosForScreenCell(grid: *const GridState, row: usize, col: usize) ReplDocPos {
+    const total_rows = @max(@as(usize, 1), replSelectableRowCount(grid));
+    const doc_row = @min(replVisibleStartRow(grid, visibleRows(grid)) + row, total_rows - 1);
+    return .{ .row = doc_row, .col = @min(col, replDocLineLength(grid, doc_row)) };
+}
+
+fn replDocPosToEntryPos(grid: *const GridState, pos: ReplDocPos) ?EntryPos {
+    const prompt_base_row = grid.promptBaseRow();
+    if (pos.row < prompt_base_row) return null;
+
+    const entry_row = pos.row - prompt_base_row;
+    if (entry_row >= grid.entry.items.len) return null;
+    if (entry_row == 0) {
+        const content_col = pos.col -| grid.prompt.items.len;
+        return .{ .row = 0, .col = @min(content_col, grid.entry.items[0].items.len) };
+    }
+    return .{ .row = entry_row, .col = @min(pos.col, grid.entry.items[entry_row].items.len) };
+}
+
+fn replDocPosToEditableEntryPos(grid: *const GridState, pos: ReplDocPos) ?EntryPos {
+    const prompt_base_row = grid.promptBaseRow();
+    if (pos.row < prompt_base_row) return null;
+
+    const entry_row = pos.row - prompt_base_row;
+    if (entry_row >= grid.entry.items.len) return null;
+    if (entry_row == 0 and pos.col < grid.prompt.items.len) return null;
+    return replDocPosToEntryPos(grid, pos);
+}
+
+fn replDocCodepointAt(grid: *const GridState, pos: ReplDocPos) ?u32 {
+    const prompt_base_row = grid.promptBaseRow();
+    if (pos.row < prompt_base_row) {
+        if (pos.row >= grid.lines.items.len) return null;
+        const line = &grid.lines.items[pos.row];
+        if (pos.col >= line.items.len) return null;
+        return line.items[pos.col];
+    }
+
+    const entry_row = pos.row - prompt_base_row;
+    if (entry_row >= grid.entry.items.len) return null;
+    if (entry_row == 0 and pos.col < grid.prompt.items.len) return grid.prompt.items[pos.col];
+    const line = &grid.entry.items[entry_row];
+    const content_col = if (entry_row == 0) pos.col -| grid.prompt.items.len else pos.col;
+    if (content_col >= line.items.len) return null;
+    return line.items[content_col];
+}
+
+fn advanceReplDocPosition(grid: *const GridState, pos: *ReplDocPos, end: ReplDocPos) bool {
+    if (replDocPosCompare(pos.*, end) >= 0) return false;
+    const line_len = replDocLineLength(grid, pos.row);
+    if (pos.col < line_len) {
+        pos.col += 1;
+        return true;
+    }
+    if (pos.row < end.row) {
+        pos.row += 1;
+        pos.col = 0;
+        return true;
+    }
+    return false;
+}
+
+fn replDocRangeToUtf8(grid: *const GridState, start: ReplDocPos, end: ReplDocPos) ?[]u8 {
+    var out: ByteList = .{};
+    errdefer out.deinit(allocator);
+
+    var pos = start;
+    while (replDocPosCompare(pos, end) < 0) {
+        const cp = replDocCodepointAt(grid, pos) orelse {
+            if (pos.row + 1 > end.row) break;
+            out.append(allocator, '\n') catch return null;
+            pos.row += 1;
+            pos.col = 0;
+            continue;
+        };
+        appendCodepointUtf8(&out, cp) catch return null;
+        if (!advanceReplDocPosition(grid, &pos, end)) break;
+    }
+
+    return out.toOwnedSlice(allocator) catch null;
+}
+
+fn editorSelectionToUtf8(grid: *const GridState, range: EditorRange) ?[]u8 {
+    const cps = grid.editorBufferConst().slice(range.start, range.end) catch return null;
+    defer allocator.free(cps);
+    return ed_buffer.codepointsToUtf8(allocator, cps) catch null;
+}
+
+fn replEditableSelectionToUtf8(grid: *const GridState) ?[]u8 {
+    const range = grid.entryMarkedRange() orelse return null;
+    return entryRangeToUtf8(grid, range.start, range.end);
+}
+
+fn editorTokenRangeAtOffset(grid: *const GridState, offset: usize) ?EditorRange {
+    const buf = grid.editorBufferConst();
+    const total = buf.length();
+    if (total == 0) return null;
+
+    var pos = @min(offset, total - 1);
+    var cp = buf.charAt(pos) orelse return null;
+    if ((cp == '\n' or cp == '\r') and pos > 0) {
+        pos -= 1;
+        cp = buf.charAt(pos) orelse return null;
+    }
+    if (isWhitespace(cp)) return null;
+    if (tokenTerminator(cp)) return .{ .start = pos, .end = pos + 1 };
+
+    var start = pos;
+    while (start > 0) {
+        const prev = buf.charAt(start - 1) orelse break;
+        if (tokenTerminator(prev)) break;
+        start -= 1;
+    }
+
+    var end = pos + 1;
+    while (end < total) : (end += 1) {
+        const next = buf.charAt(end) orelse break;
+        if (tokenTerminator(next)) break;
+    }
+
+    return .{ .start = start, .end = end };
+}
+
+fn replDocPositionBefore(grid: *const GridState, pos: ReplDocPos) ?ReplDocPos {
+    if (pos.row == 0 and pos.col == 0) return null;
+    if (pos.col > 0) return .{ .row = pos.row, .col = pos.col - 1 };
+    if (pos.row == 0) return null;
+    const prev_row = pos.row - 1;
+    return .{ .row = prev_row, .col = replDocLineLength(grid, prev_row) };
+}
+
+fn replDocPositionAfter(grid: *const GridState, pos: ReplDocPos) ReplDocPos {
+    const line_len = replDocLineLength(grid, pos.row);
+    if (pos.col < line_len) return .{ .row = pos.row, .col = pos.col + 1 };
+    const total_rows = replSelectableRowCount(grid);
+    if (pos.row + 1 < total_rows) return .{ .row = pos.row + 1, .col = 0 };
+    return .{ .row = pos.row, .col = line_len };
+}
+
+fn replDocTokenRangeAtPos(grid: *const GridState, pos: ReplDocPos) ?ReplDocRange {
+    var actual = pos;
+    var cp = replDocCodepointAt(grid, actual);
+    if (cp == null) {
+        actual = replDocPositionBefore(grid, actual) orelse return null;
+        cp = replDocCodepointAt(grid, actual);
+    }
+    const here = cp orelse return null;
+    if (isWhitespace(here)) return null;
+    if (tokenTerminator(here)) {
+        return .{ .start = actual, .end = replDocPositionAfter(grid, actual) };
+    }
+
+    var start = actual;
+    while (replDocPositionBefore(grid, start)) |prev| {
+        const prev_cp = replDocCodepointAt(grid, prev) orelse break;
+        if (tokenTerminator(prev_cp)) break;
+        start = prev;
+    }
+
+    var end = replDocPositionAfter(grid, actual);
+    while (true) {
+        const next_cp = replDocCodepointAt(grid, end) orelse break;
+        if (tokenTerminator(next_cp)) break;
+        const advanced = replDocPositionAfter(grid, end);
+        if (replDocPosCompare(advanced, end) == 0) break;
+        end = advanced;
+    }
+
+    return .{ .start = start, .end = end };
+}
+
 fn atlasUv(cp: u32) struct { x: f32, y: f32 } {
     const fallback_index: u32 = 0;
     const index = if (cp >= g_atlas.first_codepoint and cp < g_atlas.first_codepoint + g_atlas.glyph_count)
@@ -2348,6 +2846,14 @@ fn entryBeforePosition(grid: *const GridState, row: usize, col: usize) EntryPos 
 }
 
 fn entryPosCompare(a: EntryPos, b: EntryPos) i2 {
+    if (a.row < b.row) return -1;
+    if (a.row > b.row) return 1;
+    if (a.col < b.col) return -1;
+    if (a.col > b.col) return 1;
+    return 0;
+}
+
+fn replDocPosCompare(a: ReplDocPos, b: ReplDocPos) i2 {
     if (a.row < b.row) return -1;
     if (a.row > b.row) return 1;
     if (a.col < b.col) return -1;
@@ -2984,11 +3490,7 @@ fn syntaxFg(kind: SyntaxKind, theme: GridTheme) [4]u8 {
 
 fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) void {
     // Scroll so cursor stays visible.
-    const half = rows / 2;
-    const start_row = if (grid.cursor_row + 1 > rows)
-        @max(grid.cursor_row + 1 - rows, if (grid.cursor_row >= half) grid.cursor_row - half else 0)
-    else
-        0;
+    const start_row = editorVisibleStartRow(grid, rows);
     const line_count = grid.editorLineCount();
     const buf = grid.editorBufferConst();
 
@@ -3083,7 +3585,8 @@ fn renderRepl(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) void
     const cursor_pos = flash_pos orelse EntryPos{ .row = grid.entry_cursor_row, .col = grid.entry_cursor_col };
     const cursor_doc_row = prompt_base_row + cursor_pos.row;
     const cursor_doc_col = if (cursor_pos.row == 0) grid.prompt.items.len + cursor_pos.col else cursor_pos.col;
-    const start_row = if (cursor_doc_row + 1 > rows) cursor_doc_row + 1 - rows else 0;
+    const start_row = replVisibleStartRow(grid, rows);
+    const selection = grid.replSelectionRange();
 
     var screen_row: usize = 0;
     while (screen_row < rows) : (screen_row += 1) {
@@ -3092,27 +3595,40 @@ fn renderRepl(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) void
         while (col < cols) : (col += 1) {
             var cp: u32 = ' ';
             var fg = theme.fg;
+            var cell_bg = theme.bg;
             var flags: u32 = 0;
 
             if (doc_row < total_rows) {
                 if (doc_row < prompt_base_row) {
                     const line = &grid.lines.items[doc_row];
-                    if (col < line.items.len) cp = line.items[col];
+                    if (col < line.items.len) {
+                        cp = line.items[col];
+                        const style_line = &grid.line_styles.items[doc_row];
+                        const style = if (col < style_line.items.len) style_line.items[col] else ReplOutputStyle.stdout;
+                        fg = switch (style) {
+                            .repl => theme.repl_fg,
+                            .stdout => theme.stdout_fg,
+                            .stderr => theme.stderr_fg,
+                        };
+                    }
                 } else {
                     const entry_row = doc_row - prompt_base_row;
                     if (entry_row < grid.entry.items.len) {
                         if (entry_row == 0 and col < grid.prompt.items.len) {
                             cp = grid.prompt.items[col];
-                            fg = theme.prompt_fg;
+                            fg = theme.repl_fg;
                         } else {
                             const line = &grid.entry.items[entry_row];
                             const content_col = if (entry_row == 0) col -| grid.prompt.items.len else col;
-                            if (content_col < line.items.len) cp = line.items[content_col];
+                            if (content_col < line.items.len) {
+                                cp = line.items[content_col];
+                                fg = theme.repl_fg;
+                            }
                         }
                     } else if (grid.completion_menu_visible) {
                         const completion_index = entry_row - grid.entry.items.len;
                         if (completion_index < completion_rows) {
-                            fg = theme.prompt_fg;
+                            fg = theme.repl_fg;
                             if (grid.completions.items.len > MAX_VISIBLE_COMPLETIONS and completion_index + 1 == completion_rows) {
                                 const remaining = grid.completions.items.len - MAX_VISIBLE_COMPLETIONS;
                                 var more_buf: [32]u8 = undefined;
@@ -3132,10 +3648,16 @@ fn renderRepl(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) void
                         }
                     }
                 }
+                if (selection) |range| {
+                    const pos = ReplDocPos{ .row = doc_row, .col = col };
+                    if (replDocPosCompare(pos, range.start) >= 0 and replDocPosCompare(pos, range.end) < 0 and col < replDocLineLength(grid, doc_row)) {
+                        cell_bg = theme.selection_bg;
+                    }
+                }
                 if (doc_row == cursor_doc_row and col == cursor_doc_col) flags |= FLAG_CURSOR;
             }
 
-            appendCellWithColours(grid, screen_row, col, cp, flags, fg, theme.bg, theme.cursor_bg);
+            appendCellWithColours(grid, screen_row, col, cp, flags, fg, cell_bg, theme.cursor_bg);
         }
     }
 
@@ -3191,6 +3713,8 @@ fn pasteIntoGrid(grid: *GridState, bytes: []const u8) void {
         return;
     }
 
+    _ = grid.deleteSelectedEntryRange(false);
+
     var i: usize = 0;
     while (i < bytes.len) {
         const len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch {
@@ -3239,30 +3763,216 @@ fn serializeGridDocument(grid: *const GridState) ?[]u8 {
     return out.toOwnedSlice(allocator) catch null;
 }
 
+fn serializeGridSelection(grid: *const GridState) ?[]u8 {
+    if (grid.grid_id == 0) {
+        const range = grid.editorSelectionRange() orelse return null;
+        return editorSelectionToUtf8(grid, range);
+    }
+
+    if (grid.replSelectionRange()) |range| {
+        return replDocRangeToUtf8(grid, range.start, range.end);
+    }
+    if (grid.entryMarkedRange() != null) {
+        return replEditableSelectionToUtf8(grid);
+    }
+    return null;
+}
+
+fn cutGridSelection(grid: *GridState) ?[]u8 {
+    if (grid.grid_id == 0) {
+        const range = grid.editorSelectionRange() orelse return null;
+        const utf8 = editorSelectionToUtf8(grid, range) orelse return null;
+        if (!grid.editorDeleteSelection(true)) {
+            allocator.free(utf8);
+            return null;
+        }
+        return utf8;
+    }
+
+    const utf8 = replEditableSelectionToUtf8(grid) orelse return null;
+    if (!grid.deleteSelectedEntryRange(true)) {
+        allocator.free(utf8);
+        return null;
+    }
+    return utf8;
+}
+
 fn tryAppendNewline(out: *ByteList) void {
     out.append(allocator, '\n') catch {};
 }
 
-fn historyToNulSeparated(alloc: std.mem.Allocator, history: *const HistoryList) ![]u8 {
+const repl_snapshot_magic = [_]u8{ 'M', 'S', 'R', 'E', 'P', 'L', '2', 0 };
+
+fn appendU32Le(out: *ByteList, value: u32) !void {
+    try out.append(allocator, @as(u8, @intCast(value & 0xFF)));
+    try out.append(allocator, @as(u8, @intCast((value >> 8) & 0xFF)));
+    try out.append(allocator, @as(u8, @intCast((value >> 16) & 0xFF)));
+    try out.append(allocator, @as(u8, @intCast((value >> 24) & 0xFF)));
+}
+
+fn readU32Le(bytes: []const u8, offset: *usize) ?u32 {
+    if (offset.* + 4 > bytes.len) return null;
+    const value =
+        @as(u32, bytes[offset.*]) |
+        (@as(u32, bytes[offset.* + 1]) << 8) |
+        (@as(u32, bytes[offset.* + 2]) << 16) |
+        (@as(u32, bytes[offset.* + 3]) << 24);
+    offset.* += 4;
+    return value;
+}
+
+fn lineToUtf8(alloc: std.mem.Allocator, line: *const Line) ![]u8 {
     var out: ByteList = .{};
     errdefer out.deinit(alloc);
 
-    const start_index = history.items.len -| MAX_PERSISTED_HISTORY;
-    for (history.items[start_index..], 0..) |item, index| {
-        try out.appendSlice(alloc, item);
-        if (index + 1 < history.items.len - start_index) {
-            try out.append(alloc, 0);
-        }
+    for (line.items) |cp| {
+        try appendCodepointUtf8(&out, cp);
     }
 
     return try out.toOwnedSlice(alloc);
 }
 
+fn serializeReplSnapshot(alloc: std.mem.Allocator, grid: *const GridState) ![]u8 {
+    var out: ByteList = .{};
+    errdefer out.deinit(alloc);
+
+    try out.appendSlice(alloc, &repl_snapshot_magic);
+    try appendU32Le(&out, @as(u32, @intCast(grid.lines.items.len)));
+
+    for (grid.lines.items, 0..) |line, row| {
+        const utf8 = try lineToUtf8(alloc, &line);
+        defer alloc.free(utf8);
+
+        try appendU32Le(&out, @as(u32, @intCast(utf8.len)));
+        try out.appendSlice(alloc, utf8);
+
+        try appendU32Le(&out, @as(u32, @intCast(line.items.len)));
+        const style_line = if (row < grid.line_styles.items.len) &grid.line_styles.items[row] else null;
+        for (line.items, 0..) |_, col| {
+            const style = if (style_line) |styles|
+                if (col < styles.items.len) styles.items[col] else .repl
+            else
+                .repl;
+            try out.append(alloc, @intFromEnum(style));
+        }
+    }
+
+    const start_index = grid.history.items.len -| MAX_PERSISTED_HISTORY;
+    const history_count = grid.history.items.len - start_index;
+    try appendU32Le(&out, @as(u32, @intCast(history_count)));
+    for (grid.history.items[start_index..]) |item| {
+        try appendU32Le(&out, @as(u32, @intCast(item.len)));
+        try out.appendSlice(alloc, item);
+    }
+
+    return try out.toOwnedSlice(alloc);
+}
+
+fn decodeStyleByte(value: u8) ReplOutputStyle {
+    return switch (value) {
+        0 => .repl,
+        1 => .stdout,
+        2 => .stderr,
+        else => .repl,
+    };
+}
+
+fn restoreLegacyReplHistory(grid: *GridState, bytes: []const u8) void {
+    freeHistoryList(&grid.history);
+    grid.history_cursor = 0;
+    grid.clearSavedEntry();
+
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= bytes.len) : (i += 1) {
+        if (i == bytes.len or bytes[i] == 0) {
+            const item = bytes[start..i];
+            if (item.len > 0) {
+                grid.pushHistory(item);
+            }
+            start = i + 1;
+        }
+    }
+    grid.resetHistoryCursor();
+}
+
+fn restoreReplSnapshot(grid: *GridState, bytes: []const u8) bool {
+    if (bytes.len < repl_snapshot_magic.len) return false;
+    if (!std.mem.eql(u8, bytes[0..repl_snapshot_magic.len], &repl_snapshot_magic)) return false;
+
+    var offset: usize = repl_snapshot_magic.len;
+    var lines: LineList = .{};
+    errdefer freeLineList(&lines);
+    var style_lines: ReplStyleLineList = .{};
+    errdefer freeStyleLineList(&style_lines);
+    var history: HistoryList = .{};
+    errdefer freeHistoryList(&history);
+
+    const line_count = readU32Le(bytes, &offset) orelse return false;
+    var row: u32 = 0;
+    while (row < line_count) : (row += 1) {
+        const text_len = readU32Le(bytes, &offset) orelse return false;
+        if (offset + text_len > bytes.len) return false;
+        const text = bytes[offset .. offset + text_len];
+        offset += text_len;
+
+        const style_count = readU32Le(bytes, &offset) orelse return false;
+        if (offset + style_count > bytes.len) return false;
+        const style_bytes = bytes[offset .. offset + style_count];
+        offset += style_count;
+
+        lines.append(allocator, .{}) catch return false;
+        style_lines.append(allocator, .{}) catch return false;
+        appendUtf8ToLine(&lines.items[lines.items.len - 1], text) catch return false;
+
+        const cp_count = lines.items[lines.items.len - 1].items.len;
+        var col: usize = 0;
+        while (col < cp_count) : (col += 1) {
+            const style = if (col < style_bytes.len) decodeStyleByte(style_bytes[col]) else .repl;
+            style_lines.items[style_lines.items.len - 1].append(allocator, style) catch return false;
+        }
+    }
+
+    const history_count = readU32Le(bytes, &offset) orelse return false;
+    var history_index: u32 = 0;
+    while (history_index < history_count) : (history_index += 1) {
+        const item_len = readU32Le(bytes, &offset) orelse return false;
+        if (offset + item_len > bytes.len) return false;
+        const item = bytes[offset .. offset + item_len];
+        offset += item_len;
+
+        const copy = allocator.dupe(u8, item) catch return false;
+        history.append(allocator, copy) catch {
+            allocator.free(copy);
+            return false;
+        };
+    }
+
+    if (lines.items.len == 0) {
+        lines.append(allocator, .{}) catch return false;
+        style_lines.append(allocator, .{}) catch return false;
+    }
+    if (lines.items[lines.items.len - 1].items.len != 0) {
+        lines.append(allocator, .{}) catch return false;
+        style_lines.append(allocator, .{}) catch return false;
+    }
+
+    freeLineList(&grid.lines);
+    freeStyleLineList(&grid.line_styles);
+    freeHistoryList(&grid.history);
+
+    grid.lines = lines;
+    grid.line_styles = style_lines;
+    grid.history = history;
+    grid.resetHistoryCursor();
+    return true;
+}
+
 export fn grid_append_repl_output(bytes: [*]const u8, len: usize, is_error: i32) void {
-    _ = is_error;
     var grid = &g_grids[1];
     grid.ensureInit(1);
-    grid.appendOutputUtf8(bytes[0..len]);
+    const style: ReplOutputStyle = if (is_error != 0) .stderr else .stdout;
+    grid.appendOutputUtf8(bytes[0..len], style);
 }
 
 export fn grid_append_repl_prompt(bytes: [*]const u8, len: usize) void {
@@ -3271,10 +3981,19 @@ export fn grid_append_repl_prompt(bytes: [*]const u8, len: usize) void {
     grid.setPromptUtf8(bytes[0..len]);
 }
 
+export fn grid_clear_repl() void {
+    var grid = &g_grids[1];
+    grid.ensureInit(1);
+    grid.clearOutput();
+    grid.clearEntry();
+    grid.clearReplSelection();
+    grid.resetHistoryCursor();
+}
+
 export fn grid_copy_repl_history(out_len: *usize) ?[*]const u8 {
     var grid = &g_grids[1];
     grid.ensureInit(1);
-    const owned = historyToNulSeparated(allocator, &grid.history) catch return null;
+    const owned = serializeReplSnapshot(allocator, grid) catch return null;
     out_len.* = owned.len;
     return owned.ptr;
 }
@@ -3289,23 +4008,9 @@ export fn grid_free_bytes(bytes: ?[*]const u8, len: usize) void {
 export fn grid_restore_repl_history(bytes: [*]const u8, len: usize) void {
     var grid = &g_grids[1];
     grid.ensureInit(1);
-
-    freeHistoryList(&grid.history);
-    grid.history_cursor = 0;
-    grid.clearSavedEntry();
-
-    var start: usize = 0;
-    var i: usize = 0;
-    while (i <= len) : (i += 1) {
-        if (i == len or bytes[i] == 0) {
-            const item = bytes[start..i];
-            if (item.len > 0) {
-                grid.pushHistory(item);
-            }
-            start = i + 1;
-        }
+    if (!restoreReplSnapshot(grid, bytes[0..len])) {
+        restoreLegacyReplHistory(grid, bytes[0..len]);
     }
-    grid.resetHistoryCursor();
 }
 
 export fn grid_set_completions(prefix_bytes: [*]const u8, prefix_len: usize, words: ?[*]const [*:0]const u8, count: usize) void {
@@ -3365,8 +4070,15 @@ export fn grid_replace_text(grid_id: i32, bytes: [*]const u8, len: usize) void {
     }
 
     freeLineList(&grid.lines);
-    appendEmptyLine(&grid.lines) catch return;
+    freeStyleLineList(&grid.line_styles);
+    grid.appendEmptyOutputLine() catch return;
     decodeUtf8IntoLineList(&grid.lines, bytes[0..len]) catch return;
+    freeStyleLineList(&grid.line_styles);
+    var row: usize = 0;
+    while (row < grid.lines.items.len) : (row += 1) {
+        grid.line_styles.append(allocator, .{}) catch return;
+        appendStyleSlice(&grid.line_styles.items[row], grid.lines.items[row].items.len, .repl) catch return;
+    }
 }
 
 /// Store the current file path for the editor (grid 0). Copies the string.
@@ -3419,6 +4131,205 @@ export fn grid_copy_text(grid_id: i32, out_len: *usize) ?[*]const u8 {
     return owned.ptr;
 }
 
+export fn grid_copy_selection_text(grid_id: i32, out_len: *usize) ?[*]const u8 {
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+
+    const owned = serializeGridSelection(grid) orelse {
+        out_len.* = 0;
+        return null;
+    };
+    out_len.* = owned.len;
+    return owned.ptr;
+}
+
+export fn grid_cut_selection_text(grid_id: i32, out_len: *usize) ?[*]const u8 {
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+
+    const owned = cutGridSelection(grid) orelse {
+        out_len.* = 0;
+        return null;
+    };
+    out_len.* = owned.len;
+    return owned.ptr;
+}
+
+export fn grid_set_theme(theme_id: i32) void {
+    const clamped: usize = if (theme_id <= 0)
+        0
+    else if (theme_id >= THEME_PALETTES.len)
+        THEME_PALETTES.len - 1
+    else
+        @as(usize, @intCast(theme_id));
+    g_theme_id = @enumFromInt(clamped);
+}
+
+export fn grid_get_theme() i32 {
+    return @as(i32, @intCast(@intFromEnum(g_theme_id)));
+}
+
+export fn grid_on_mouse_down(grid_id: i32, row: i32, col: i32, mods: u32) void {
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+
+    const clamped_row: usize = if (row <= 0) 0 else @as(usize, @intCast(row));
+    const clamped_col: usize = if (col <= 0) 0 else @as(usize, @intCast(col));
+
+    if (id == 0) {
+        const target = editorOffsetForScreenCell(grid, clamped_row, clamped_col);
+        const anchor = if ((mods & Mods.SHIFT) != 0)
+            (grid.editor_selection_anchor orelse grid.editor_selection_start orelse grid.editor_cursor_offset)
+        else
+            target;
+        grid.editor_selection_anchor = anchor;
+        grid.mouse_editor_anchor = anchor;
+        grid.editor_cursor_offset = target;
+        if ((mods & Mods.SHIFT) != 0)
+            grid.setEditorSelection(anchor, target)
+        else
+            grid.clearEditorSelection();
+        grid.syncEditorCursorFromOffset(true);
+        return;
+    }
+
+    const target = replDocPosForScreenCell(grid, clamped_row, clamped_col);
+    const anchor = if ((mods & Mods.SHIFT) != 0)
+        (grid.repl_selection_anchor orelse grid.repl_selection_start orelse replCursorDocPos(grid))
+    else
+        target;
+    grid.repl_selection_anchor = anchor;
+    grid.mouse_repl_anchor = anchor;
+    if ((mods & Mods.SHIFT) != 0) {
+        grid.setReplSelection(anchor, target);
+    } else {
+        grid.clearReplSelection();
+    }
+
+    if (replDocPosToEntryPos(grid, target)) |entry_pos| {
+        grid.moveCursorTo(entry_pos);
+        if ((mods & Mods.SHIFT) != 0) {
+            if (replDocPosToEditableEntryPos(grid, anchor)) |entry_anchor| {
+                if (replDocPosToEditableEntryPos(grid, target) != null) {
+                    grid.mark = entry_anchor;
+                } else {
+                    grid.mark = null;
+                }
+            }
+        } else {
+            grid.mark = null;
+        }
+    } else if ((mods & Mods.SHIFT) == 0) {
+        grid.mark = null;
+    }
+}
+
+export fn grid_on_mouse_double_click(grid_id: i32, row: i32, col: i32, mods: u32) void {
+    _ = mods;
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+
+    const clamped_row: usize = if (row <= 0) 0 else @as(usize, @intCast(row));
+    const clamped_col: usize = if (col <= 0) 0 else @as(usize, @intCast(col));
+
+    if (id == 0) {
+        const target = editorOffsetForScreenCell(grid, clamped_row, clamped_col);
+        if (editorTokenRangeAtOffset(grid, target)) |range| {
+            grid.editor_selection_anchor = range.start;
+            grid.mouse_editor_anchor = range.start;
+            grid.setEditorSelection(range.start, range.end);
+            grid.editor_cursor_offset = range.end;
+        } else {
+            grid.editor_selection_anchor = target;
+            grid.mouse_editor_anchor = target;
+            grid.clearEditorSelection();
+            grid.editor_cursor_offset = target;
+        }
+        grid.syncEditorCursorFromOffset(true);
+        return;
+    }
+
+    const target = replDocPosForScreenCell(grid, clamped_row, clamped_col);
+    if (replDocTokenRangeAtPos(grid, target)) |range| {
+        grid.repl_selection_anchor = range.start;
+        grid.mouse_repl_anchor = range.start;
+        grid.setReplSelection(range.start, range.end);
+        if (replDocPosToEditableEntryPos(grid, range.start)) |entry_anchor| {
+            if (replDocPosToEditableEntryPos(grid, range.end)) |entry_end| {
+                grid.mark = entry_anchor;
+                grid.moveCursorTo(entry_end);
+            } else {
+                grid.mark = null;
+            }
+        } else {
+            grid.mark = null;
+        }
+    } else {
+        grid.repl_selection_anchor = target;
+        grid.mouse_repl_anchor = target;
+        grid.clearReplSelection();
+        grid.mark = null;
+        if (replDocPosToEntryPos(grid, target)) |entry_pos| {
+            grid.moveCursorTo(entry_pos);
+        }
+    }
+}
+
+export fn grid_on_mouse_drag(grid_id: i32, row: i32, col: i32, mods: u32) void {
+    _ = mods;
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+
+    const clamped_row: usize = if (row <= 0) 0 else @as(usize, @intCast(row));
+    const clamped_col: usize = if (col <= 0) 0 else @as(usize, @intCast(col));
+
+    if (id == 0) {
+        const anchor = grid.mouse_editor_anchor orelse grid.editor_cursor_offset;
+        const target = editorOffsetForScreenCell(grid, clamped_row, clamped_col);
+        grid.editor_cursor_offset = target;
+        grid.setEditorSelection(anchor, target);
+        grid.syncEditorCursorFromOffset(true);
+        return;
+    }
+
+    const anchor = grid.mouse_repl_anchor orelse replCursorDocPos(grid);
+    const target = replDocPosForScreenCell(grid, clamped_row, clamped_col);
+    grid.setReplSelection(anchor, target);
+    if (replDocPosToEditableEntryPos(grid, anchor)) |entry_anchor| {
+        if (replDocPosToEditableEntryPos(grid, target)) |entry_pos| {
+            grid.mark = entry_anchor;
+            grid.moveCursorTo(entry_pos);
+        } else {
+            grid.mark = null;
+            if (replDocPosToEntryPos(grid, target)) |entry_pos| {
+                grid.moveCursorTo(entry_pos);
+            }
+        }
+    } else {
+        grid.mark = null;
+    }
+}
+
+export fn grid_on_mouse_up(grid_id: i32, row: i32, col: i32, mods: u32) void {
+    _ = row;
+    _ = col;
+    _ = mods;
+    const id = clampGridId(grid_id);
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+    if (id == 0) {
+        grid.mouse_editor_anchor = null;
+    } else {
+        grid.mouse_repl_anchor = null;
+        if (grid.replSelectionRange() == null) grid.clearReplSelection();
+    }
+}
+
 export fn grid_set_atlas_info(info: *const GlyphAtlasInfo) void {
     g_atlas = info.*;
 }
@@ -3429,6 +4340,18 @@ export fn grid_on_resize(grid_id: i32, width: f32, height: f32, scale: f32) void
     g_grids[id].viewport_width = width;
     g_grids[id].viewport_height = height;
     g_grids[id].backing_scale = scale;
+    if (id == 0) {
+        g_grids[id].ensureEditorCursorVisible(visibleRows(&g_grids[id]));
+    }
+}
+
+export fn grid_on_scroll(grid_id: i32, delta_rows: i32) void {
+    const id = clampGridId(grid_id);
+    if (id != 0 or delta_rows == 0) return;
+
+    var grid = &g_grids[id];
+    grid.ensureInit(id);
+    grid.editorScrollViewport(@as(isize, @intCast(delta_rows)));
 }
 
 export fn grid_repl_set_terminal_size(cols: i32, rows: i32) void {
@@ -3659,11 +4582,9 @@ export fn grid_on_key_down(grid_id: i32, keycode: u32, mods: u32) void {
             grid.editorMoveDown();
         },
         Key.BACKSPACE => {
-            grid.clearEditorSelection();
             grid.editorBackspace();
         },
         Key.DELETE => {
-            grid.clearEditorSelection();
             grid.editorDeleteForward();
         },
         Key.HOME => {
@@ -3674,16 +4595,22 @@ export fn grid_on_key_down(grid_id: i32, keycode: u32, mods: u32) void {
             grid.clearEditorSelection();
             grid.editorMoveEnd();
         },
+        Key.PAGE_UP => {
+            grid.clearEditorSelection();
+            grid.editorPageUp();
+        },
+        Key.PAGE_DOWN => {
+            grid.clearEditorSelection();
+            grid.editorPageDown();
+        },
         Key.ENTER, Key.KEYPAD_ENTER => {
             if ((mods & Mods.COMMAND) != 0) {
                 grid.editorEvalTopLevelForm();
             } else {
-                grid.clearEditorSelection();
                 grid.insertEditorNewline();
             }
         },
         Key.TAB => {
-            grid.clearEditorSelection();
             grid.editorIndentCurrentLine();
         },
         Key.Q => {
@@ -3742,7 +4669,6 @@ export fn grid_on_text(grid_id: i32, codepoint: u32) void {
             if (id == 1) {
                 grid.entryBackspace();
             } else {
-                grid.clearEditorSelection();
                 grid.editorBackspace();
             }
         },
@@ -3750,7 +4676,6 @@ export fn grid_on_text(grid_id: i32, codepoint: u32) void {
             if (id == 1) {
                 submitRepl(grid);
             } else {
-                grid.clearEditorSelection();
                 grid.insertEditorNewline();
             }
         },
@@ -3765,28 +4690,22 @@ export fn grid_on_text(grid_id: i32, codepoint: u32) void {
                 switch (codepoint) {
                     '(' => {
                         if (!grid.editorWrapSelectionInParentheses()) {
-                            grid.clearEditorSelection();
                             grid.editorTypedOpenDelimiter('(', ')');
                         }
                     },
                     '[' => {
-                        grid.clearEditorSelection();
                         grid.editorTypedOpenDelimiter('[', ']');
                     },
                     '"' => {
-                        grid.clearEditorSelection();
                         grid.editorTypedQuote();
                     },
                     ')' => {
-                        grid.clearEditorSelection();
                         grid.editorTypedCloseOrSkip(')');
                     },
                     ']' => {
-                        grid.clearEditorSelection();
                         grid.editorTypedCloseOrSkip(']');
                     },
                     else => {
-                        grid.clearEditorSelection();
                         grid.insertEditorCodepoint(codepoint);
                     },
                 }
@@ -3796,13 +4715,23 @@ export fn grid_on_text(grid_id: i32, codepoint: u32) void {
 }
 
 comptime {
+    _ = grid_clear_repl;
+    _ = grid_copy_selection_text;
+    _ = grid_cut_selection_text;
     _ = grid_on_frame;
     _ = grid_on_key_down;
+    _ = grid_on_mouse_double_click;
+    _ = grid_on_mouse_down;
+    _ = grid_on_mouse_drag;
+    _ = grid_on_mouse_up;
+    _ = grid_on_scroll;
     _ = grid_on_resize;
     _ = grid_on_text;
     _ = grid_set_atlas_info;
     _ = grid_set_completions;
     _ = grid_set_editor_file_path;
+    _ = grid_set_theme;
+    _ = grid_get_theme;
     _ = grid_set_editor_modified;
     _ = grid_get_editor_file_path;
     _ = grid_get_editor_modified;

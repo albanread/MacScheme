@@ -2513,8 +2513,58 @@ void gfx_dialog_set_selection_bridge(uint16_t control_id, int32_t index) {
     return YES;
 }
 
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+    return YES;
+}
+
 - (BOOL)canBecomeKeyView {
     return YES;
+}
+
+- (void)captureKeyboardFocus {
+    NSWindow *window = self.window;
+    if (window && window.firstResponder != self) {
+        [window makeFirstResponder:self];
+    }
+}
+
+- (void)clearInputState {
+    for (int i = 0; i < 256; i++) {
+        gfx_set_key_state((uint8_t)i, 0);
+    }
+    g_mouse_buttons = 0;
+}
+
+- (void)viewWillMoveToWindow:(NSWindow *)newWindow {
+    NSWindow *currentWindow = self.window;
+    if (currentWindow) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:NSWindowDidResignKeyNotification
+                                                      object:currentWindow];
+    }
+    [super viewWillMoveToWindow:newWindow];
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(windowDidResignKey:)
+                                                     name:NSWindowDidResignKeyNotification
+                                                   object:self.window];
+    }
+}
+
+- (void)dealloc {
+    if (self.window) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:NSWindowDidResignKeyNotification
+                                                      object:self.window];
+    }
+}
+
+- (void)windowDidResignKey:(NSNotification *)notification {
+    [self clearInputState];
 }
 
 // ─── Keyboard Events ────────────────────────────────────────────────────
@@ -2580,6 +2630,7 @@ void gfx_dialog_set_selection_bridge(uint16_t control_id, int32_t index) {
 }
 
 - (void)mouseDown:(NSEvent *)event {
+    [self captureKeyboardFocus];
     g_mouse_buttons |= 1;  // Left
     [self updateMousePosition:event];
 }
@@ -2590,6 +2641,7 @@ void gfx_dialog_set_selection_bridge(uint16_t control_id, int32_t index) {
 }
 
 - (void)rightMouseDown:(NSEvent *)event {
+    [self captureKeyboardFocus];
     g_mouse_buttons |= 2;  // Right
     [self updateMousePosition:event];
 }
@@ -2600,6 +2652,7 @@ void gfx_dialog_set_selection_bridge(uint16_t control_id, int32_t index) {
 }
 
 - (void)otherMouseDown:(NSEvent *)event {
+    [self captureKeyboardFocus];
     g_mouse_buttons |= 4;  // Middle
     [self updateMousePosition:event];
 }
@@ -3158,13 +3211,33 @@ static void gfx_start_command_polling(void) {
 // Called from both the render loop (drawInMTKView:) and the polling timer.
 // Defined here because GraphicsWindowController must be fully declared first.
 
+static void gfx_teardown_host_graphics_view(BOOL markClosed) {
+    if (g_gfx_renderer) {
+        [g_gfx_renderer releaseBuffers];
+        g_gfx_renderer = nil;
+    }
+
+    if (g_gfx_host_graphics_view) {
+        g_gfx_host_graphics_view.paused = YES;
+        g_gfx_host_graphics_view.delegate = nil;
+        [g_gfx_host_graphics_view removeFromSuperview];
+        g_gfx_host_graphics_view = nil;
+    }
+
+    g_gfx_mtk_view = nil;
+    g_gfx_active = false;
+    g_gfx_command_queue = nil;
+    g_gfx_device = nil;
+
+    if (markClosed) {
+        gfx_mark_closed();
+    }
+}
+
 static void gfx_handle_create_window(uint16_t w, uint16_t h, uint16_t scale) {
     if (g_gfx_host_view) {
         // Host-pane mode: render inside an existing NSView (MacScheme right-top pane).
-        if (g_gfx_host_graphics_view) {
-            [g_gfx_host_graphics_view removeFromSuperview];
-            g_gfx_host_graphics_view = nil;
-        }
+        gfx_teardown_host_graphics_view(NO);
 
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (!device) {
@@ -3178,9 +3251,7 @@ static void gfx_handle_create_window(uint16_t w, uint16_t h, uint16_t scale) {
         g_gfx_host_graphics_view.enableSetNeedsDisplay = NO;
         g_gfx_host_graphics_view.paused = NO;
 
-        if (!g_gfx_renderer) {
-            g_gfx_renderer = [[GraphicsMetalRenderer alloc] initWithDevice:device view:g_gfx_host_graphics_view];
-        }
+        g_gfx_renderer = [[GraphicsMetalRenderer alloc] initWithDevice:device view:g_gfx_host_graphics_view];
         g_gfx_host_graphics_view.delegate = g_gfx_renderer;
         g_gfx_host_graphics_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 
@@ -3191,6 +3262,9 @@ static void gfx_handle_create_window(uint16_t w, uint16_t h, uint16_t scale) {
         g_gfx_active = true;
 
         [g_gfx_host_view addSubview:g_gfx_host_graphics_view];
+        if (g_gfx_host_graphics_view.window) {
+            [g_gfx_host_graphics_view.window makeFirstResponder:g_gfx_host_graphics_view];
+        }
         [g_gfx_host_graphics_view setNeedsDisplay:YES];
         return;
     }
@@ -3203,10 +3277,7 @@ static void gfx_handle_create_window(uint16_t w, uint16_t h, uint16_t scale) {
 
 static void gfx_handle_destroy_window(void) {
     if (g_gfx_host_graphics_view) {
-        [g_gfx_host_graphics_view removeFromSuperview];
-        g_gfx_host_graphics_view = nil;
-        g_gfx_mtk_view = nil;
-        g_gfx_active = false;
+        gfx_teardown_host_graphics_view(YES);
     }
 
     if (g_gfx_window_controller) {

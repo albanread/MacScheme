@@ -10,6 +10,8 @@
     <string>com.macscheme.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>MacScheme.icns</string>
     <key>CFBundleName</key>
     <string>MacScheme</string>
     <key>CFBundlePackageType</key>
