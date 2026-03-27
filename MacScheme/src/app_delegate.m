@@ -73,6 +73,8 @@ extern void grid_set_completions(const unsigned char *prefix_bytes, size_t prefi
 extern const unsigned char *grid_copy_repl_history(size_t *out_len);
 extern void grid_free_bytes(const unsigned char *bytes, size_t len);
 extern void grid_restore_repl_history(const unsigned char *bytes, size_t len);
+extern uint64_t grid_get_editor_change_serial(void);
+extern void grid_run_editor_syntax_check(uint64_t revision);
 
 // MacScheme graphics runtime exports.
 extern void macscheme_gfx_init(void);
@@ -1764,6 +1766,8 @@ static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
 @property (assign) CGFloat savedMainSplitRatio;
 @property (assign) CGFloat savedRightSplitRatio;
 @property (assign) MacSchemeLayoutPreset currentLayoutPreset;
+@property (strong) NSTimer *syntaxCheckTimer;
+@property (assign) uint64_t lastSyntaxCheckedRevision;
 - (void)showAboutDialog:(id)sender;
 - (void)showSchemeHelp:(id)sender;
 - (void)showSchemeHelpHome:(id)sender;
@@ -1787,6 +1791,7 @@ static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
 - (void)reindentCurrentLine:(id)sender;
 - (void)reindentSelectionOrLine:(id)sender;
 - (void)formatSourceCode:(id)sender;
+- (void)tickSyntaxCheck:(NSTimer *)timer;
 @end
 
 @interface GraphicsPlaceholderView : NSView
@@ -2804,12 +2809,31 @@ static void *scheme_thread_entry(void *arg) {
     [self dispatchEditorKeyCode:MacSchemeEditorKeyF modifiers:MacSchemeGridModAlt | MacSchemeGridModShift];
 }
 
+- (void)tickSyntaxCheck:(NSTimer *)timer {
+    (void)timer;
+    if (!self.schemeReady) return;
+
+    uint64_t revision = grid_get_editor_change_serial();
+    if (revision == 0 || revision == self.lastSyntaxCheckedRevision) return;
+
+    grid_run_editor_syntax_check(revision);
+    self.lastSyntaxCheckedRevision = revision;
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
     (void)aNotification;
     g_app_delegate = self;
     self.schemeReady = NO;
+    self.lastSyntaxCheckedRevision = 0;
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self installMainMenu];
+
+    self.syntaxCheckTimer = [NSTimer timerWithTimeInterval:0.45
+                                                    target:self
+                                                  selector:@selector(tickSyntaxCheck:)
+                                                  userInfo:nil
+                                                   repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:self.syntaxCheckTimer forMode:NSRunLoopCommonModes];
 
     // Create a named semaphore for the eval queue.
     sem_unlink("/macscheme_eval");

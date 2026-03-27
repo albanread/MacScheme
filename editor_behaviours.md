@@ -151,6 +151,7 @@ Since Paredit-style chords can be difficult to memorize initially, exposing them
 *   **Barf Forward:** Push last item out of list (`Ctrl-Option-Left`).
 *   **Re-indent S-expression:** Automatically fixes formatting for the current selection or top-level form without manually hitting `Tab` on every line.
 *   **Format Document:** Formats the entire active document (Source -> Format Source Code, or Shift+Option+F). This re-indents everything to correct standard Lisp spacing.
+*   **Live Syntax Check:** The editor periodically asks Chez Scheme to read the current buffer; if the reader finds malformed Scheme, the affected line gets a red `!` marker and error highlight until the form is fixed.
 *   **Select Enclosing Form:** Expands selection to the current enclosing list.
 *   **Balance / Check Parentheses:** Reports whether the current buffer is balanced and, when possible, moves to the nearest mismatch.
 

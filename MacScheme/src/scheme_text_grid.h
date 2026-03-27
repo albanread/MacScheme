@@ -21,6 +21,8 @@ extern void grid_free_bytes(const uint8_t *bytes, size_t len);
 extern void grid_set_editor_file_path(const uint8_t *bytes, size_t len);
 extern void grid_set_editor_modified(int modified);
 extern int grid_get_editor_modified(void);
+extern uint64_t grid_get_editor_change_serial(void);
+extern void grid_run_editor_syntax_check(uint64_t revision);
 extern const uint8_t *grid_get_editor_file_path(size_t *out_len);
 extern void grid_append_repl_prompt(const uint8_t *bytes, size_t len);
 extern void grid_clear_repl(void);

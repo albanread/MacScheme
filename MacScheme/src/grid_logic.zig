@@ -226,6 +226,18 @@ const EditorUndoState = struct {
     modified: bool,
 };
 
+const EditorSyntaxOpen = struct {
+    cp: u32,
+    offset: usize,
+    row: usize,
+    col: usize,
+};
+
+const EditorSyntaxIssue = struct {
+    offset: usize,
+    message: []const u8,
+};
+
 const FlashState = struct {
     pos: EntryPos,
     until_time: f32,
@@ -280,6 +292,11 @@ const GridState = struct {
     editor_cursor_offset: usize = 0,
     editor_file_path: ?[]u8 = null,
     editor_modified: bool = false,
+    editor_change_serial: u64 = 0,
+    editor_syntax_error_offset: ?usize = null,
+    editor_syntax_error_row: ?usize = null,
+    editor_syntax_error_col: ?usize = null,
+    editor_syntax_error_message: ?[]u8 = null,
     editor_selection_start: ?usize = null,
     editor_selection_end: ?usize = null,
     editor_selection_anchor: ?usize = null,
@@ -325,6 +342,7 @@ const GridState = struct {
             allocator.free(path);
             self.editor_file_path = null;
         }
+        self.clearEditorSyntaxError();
         freeEditorUndoList(&self.editor_undo);
         freeEditorUndoList(&self.editor_redo);
         self.instances.deinit(allocator);
@@ -337,6 +355,8 @@ const GridState = struct {
         buffer.insertUtf8(0, "; MacScheme editor\n(define (square x) (* x x))\n\n") catch {};
         self.editor_cursor_offset = buffer.length();
         self.editor_buffer = buffer;
+        self.editor_change_serial +%= 1;
+        self.clearEditorSyntaxError();
         self.syncEditorCursorFromOffset(true);
     }
 
@@ -425,8 +445,20 @@ const GridState = struct {
         self.repl_selection_end = null;
     }
 
+    fn clearEditorSyntaxError(self: *GridState) void {
+        if (self.editor_syntax_error_message) |message| {
+            allocator.free(message);
+            self.editor_syntax_error_message = null;
+        }
+        self.editor_syntax_error_offset = null;
+        self.editor_syntax_error_row = null;
+        self.editor_syntax_error_col = null;
+    }
+
     fn markEditorEdited(self: *GridState) void {
         self.editor_modified = true;
+        self.editor_change_serial +%= 1;
+        self.clearEditorSyntaxError();
     }
 
     fn markEditorSaved(self: *GridState) void {
@@ -739,7 +771,9 @@ const GridState = struct {
         const buffer = RopeBuffer.initFromUtf8(allocator, bytes) catch RopeBuffer.init(allocator) catch unreachable;
         self.editor_cursor_offset = 0;
         self.editor_buffer = buffer;
+        self.editor_change_serial +%= 1;
         self.markEditorSaved();
+        self.clearEditorSyntaxError();
         self.clearEditorUndoHistory();
         self.clearEditorSelection();
         self.editor_selection_anchor = null;
@@ -2630,7 +2664,8 @@ fn editorOffsetForScreenCell(grid: *const GridState, row: usize, col: usize) usi
     const buf = grid.editorBufferConst();
     const line_count = @max(@as(usize, 1), buf.lineCount());
     const doc_row = @min(editorVisibleStartRow(grid, visibleRows(grid)) + row, line_count - 1);
-    return buf.lineColToOffset(doc_row, col);
+    const text_col = col -| 1;
+    return buf.lineColToOffset(doc_row, text_col);
 }
 
 fn replDocPosForScreenCell(grid: *const GridState, row: usize, col: usize) ReplDocPos {
@@ -2806,17 +2841,143 @@ fn replDocTokenRangeAtPos(grid: *const GridState, pos: ReplDocPos) ?ReplDocRange
 
 fn atlasUv(cp: u32) struct { x: f32, y: f32 } {
     const fallback_index: u32 = 0;
+    const atlas_cols = if (g_atlas.cols == 0) @as(u32, 16) else g_atlas.cols;
     const index = if (cp >= g_atlas.first_codepoint and cp < g_atlas.first_codepoint + g_atlas.glyph_count)
         cp - g_atlas.first_codepoint
     else
         fallback_index;
 
-    const col = index % g_atlas.cols;
-    const row = index / g_atlas.cols;
+    const col = index % atlas_cols;
+    const row = index / atlas_cols;
     return .{
         .x = @as(f32, @floatFromInt(col)) * g_atlas.cell_width,
         .y = @as(f32, @floatFromInt(row)) * g_atlas.cell_height,
     };
+}
+
+fn editorFindSyntaxIssue(grid: *const GridState) ?EditorSyntaxIssue {
+    const buf = grid.editorBufferConst();
+    const total = buf.length();
+    if (total == 0) return null;
+
+    var stack: std.ArrayListUnmanaged(EditorSyntaxOpen) = .{};
+    defer stack.deinit(allocator);
+
+    var row: usize = 0;
+    var col: usize = 0;
+    var offset: usize = 0;
+    var in_string = false;
+    var escape = false;
+    var line_comment = false;
+    var block_comment_depth: usize = 0;
+    var block_comment_start_offset: usize = 0;
+
+    while (offset < total) : (offset += 1) {
+        const cp = buf.charAt(offset) orelse break;
+        const next_cp = if (offset + 1 < total) buf.charAt(offset + 1) else null;
+
+        if (line_comment) {
+            if (cp == '\n') {
+                line_comment = false;
+                row += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+            continue;
+        }
+
+        if (in_string) {
+            if (escape) {
+                escape = false;
+            } else if (cp == '\\') {
+                escape = true;
+            } else if (cp == '"') {
+                in_string = false;
+            }
+
+            if (cp == '\n') {
+                row += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+            continue;
+        }
+
+        if (block_comment_depth > 0) {
+            if (cp == '#' and next_cp != null and next_cp.? == '|') {
+                block_comment_depth += 1;
+                offset += 1;
+                col += 2;
+                continue;
+            }
+            if (cp == '|' and next_cp != null and next_cp.? == '#') {
+                block_comment_depth -= 1;
+                offset += 1;
+                col += 2;
+                continue;
+            }
+            if (cp == '\n') {
+                row += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+            continue;
+        }
+
+        if (cp == ';') {
+            line_comment = true;
+            col += 1;
+            continue;
+        }
+
+        if (cp == '#' and next_cp != null and next_cp.? == '|') {
+            block_comment_depth = 1;
+            block_comment_start_offset = offset;
+            offset += 1;
+            col += 2;
+            continue;
+        }
+
+        if (cp == '"') {
+            in_string = true;
+            escape = false;
+            col += 1;
+            continue;
+        }
+
+        if (cp == '(' or cp == '[') {
+            stack.append(allocator, .{ .cp = cp, .offset = offset, .row = row, .col = col }) catch {};
+        } else if (cp == ')' or cp == ']') {
+            const expected_open: u32 = if (cp == ')') '(' else '[';
+            if (stack.items.len == 0 or stack.items[stack.items.len - 1].cp != expected_open) {
+                return .{ .offset = offset, .message = "unmatched closing delimiter" };
+            }
+            _ = stack.pop();
+        }
+
+        if (cp == '\n') {
+            row += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+
+    if (in_string) {
+        return .{ .offset = total - 1, .message = "unterminated string literal" };
+    }
+    if (block_comment_depth > 0) {
+        return .{ .offset = block_comment_start_offset, .message = "unterminated block comment" };
+    }
+    if (stack.items.len > 0) {
+        const open = stack.items[stack.items.len - 1];
+        return .{ .offset = open.offset, .message = "unclosed delimiter" };
+    }
+
+    return null;
 }
 
 fn appendCellWithColours(grid: *GridState, row: usize, col: usize, cp: u32, flags: u32, fg: [4]u8, bg: [4]u8, cursor_bg: [4]u8) void {
@@ -3514,6 +3675,8 @@ fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) vo
     const start_row = editorVisibleStartRow(grid, rows);
     const line_count = grid.editorLineCount();
     const buf = grid.editorBufferConst();
+    const gutter_cols: usize = if (cols > 0) 1 else 0;
+    const text_cols: usize = cols -| gutter_cols;
 
     // Compute bracket match positions for this frame.
     var match_a: ?usize = null; // the delimiter the cursor is on/before
@@ -3550,6 +3713,8 @@ fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) vo
         const doc_row = start_row + screen_row;
         const maybe_line = if (doc_row < line_count) grid.editorBufferConst().getLine(doc_row) catch null else null;
         defer if (maybe_line) |line| allocator.free(line);
+        const syntax_error_on_row = grid.editor_syntax_error_row != null and grid.editor_syntax_error_row.? == doc_row;
+        const syntax_error_col = if (syntax_error_on_row) grid.editor_syntax_error_col else null;
 
         var syntax_kinds: ?[]SyntaxKind = null;
         if (maybe_line) |line| {
@@ -3560,8 +3725,15 @@ fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) vo
         }
         defer if (syntax_kinds) |sk| allocator.free(sk);
 
+        if (gutter_cols > 0) {
+            const gutter_cp: u32 = if (syntax_error_on_row) '!' else ' ';
+            const gutter_bg = if (syntax_error_on_row) theme.unbalanced_bg else theme.bg;
+            appendCellWithColours(grid, screen_row, 0, gutter_cp, 0, theme.fg, gutter_bg, theme.cursor_bg);
+        }
+
         var col: usize = 0;
-        while (col < cols) : (col += 1) {
+        while (col < text_cols) : (col += 1) {
+            const screen_col = col + gutter_cols;
             var cp: u32 = ' ';
             var flags: u32 = 0;
             var fg = theme.fg;
@@ -3578,6 +3750,9 @@ fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) vo
                         cell_bg = theme.selection_bg;
                     }
                 }
+                if (syntax_error_col != null and col == syntax_error_col.?) {
+                    cell_bg = theme.unbalanced_bg;
+                }
                 if (match_a != null and match_b == null and cell_off == match_a.?) {
                     cell_bg = theme.unbalanced_bg;
                 } else if ((match_a != null and cell_off == match_a.?) or (match_b != null and cell_off == match_b.?)) {
@@ -3586,11 +3761,15 @@ fn renderEditor(grid: *GridState, theme: GridTheme, cols: usize, rows: usize) vo
             } else if (doc_row == grid.cursor_row and col == grid.cursor_col) {
                 flags |= FLAG_CURSOR;
             }
-            appendCellWithColours(grid, screen_row, col, cp, flags, fg, cell_bg, theme.cursor_bg);
+            appendCellWithColours(grid, screen_row, screen_col, cp, flags, fg, cell_bg, theme.cursor_bg);
         }
     }
 
-    if (grid.cursor_row >= start_row and grid.cursor_row < start_row + rows and grid.cursor_col >= cols) {
+    if (text_cols == 0) {
+        if (gutter_cols > 0 and grid.cursor_row >= start_row and grid.cursor_row < start_row + rows) {
+            appendCellWithColours(grid, grid.cursor_row - start_row, 0, ' ', FLAG_CURSOR, theme.fg, theme.bg, theme.cursor_bg);
+        }
+    } else if (grid.cursor_row >= start_row and grid.cursor_row < start_row + rows and grid.cursor_col >= text_cols) {
         appendCellWithColours(grid, grid.cursor_row - start_row, cols - 1, ' ', FLAG_CURSOR, theme.fg, theme.bg, theme.cursor_bg);
     }
 }
@@ -4118,6 +4297,29 @@ export fn grid_set_editor_modified(modified: i32) void {
     var grid = &g_grids[0];
     grid.ensureInit(0);
     grid.editor_modified = modified != 0;
+}
+
+export fn grid_get_editor_change_serial() u64 {
+    const grid = &g_grids[0];
+    if (!grid.initialized) return 0;
+    return grid.editor_change_serial;
+}
+
+export fn grid_run_editor_syntax_check(revision: u64) void {
+    var grid = &g_grids[0];
+    grid.ensureInit(0);
+    if (revision != 0 and revision != grid.editor_change_serial) return;
+
+    grid.clearEditorSyntaxError();
+    const issue = editorFindSyntaxIssue(grid) orelse return;
+    const message = allocator.dupe(u8, issue.message) catch null;
+    const buf = grid.editorBufferConst();
+    const clamped_offset = @min(issue.offset, buf.length());
+    const pos = buf.offsetToLineCol(clamped_offset);
+    grid.editor_syntax_error_offset = clamped_offset;
+    grid.editor_syntax_error_row = pos.line;
+    grid.editor_syntax_error_col = pos.col;
+    grid.editor_syntax_error_message = message;
 }
 
 export fn grid_get_editor_modified() i32 {
