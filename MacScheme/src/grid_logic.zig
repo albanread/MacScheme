@@ -1052,6 +1052,27 @@ const GridState = struct {
         self.syncEditorCursorFromOffset(true);
     }
 
+    fn editorFormatWholeBuffer(self: *GridState) void {
+        self.pushEditorUndoSnapshot();
+
+        const buf = self.editorBufferConst();
+        const end_row = if (buf.lineCount() > 0) buf.lineCount() - 1 else 0;
+
+        var cursor_offset = self.editor_cursor_offset;
+        var changed = false;
+        var row: usize = 0;
+        while (row <= end_row) : (row += 1) {
+            if (self.editorIndentLineAtRow(row, &cursor_offset, null, null)) {
+                changed = true;
+            }
+        }
+        if (!changed) return;
+
+        self.editor_cursor_offset = cursor_offset;
+        self.markEditorEdited();
+        self.syncEditorCursorFromOffset(true);
+    }
+
     // Find the offset of the bracket that matches the one at `search_offset`.
     // Returns null if no delimiter there or no match found.
     // `search_offset` is the offset of the delimiter to match (not the cursor).
@@ -4615,6 +4636,9 @@ export fn grid_on_key_down(grid_id: i32, keycode: u32, mods: u32) void {
         },
         Key.Q => {
             if ((mods & Mods.ALT) != 0) grid.editorReindentSelectionOrCurrentLine();
+        },
+        Key.F => {
+            if ((mods & Mods.ALT) != 0 and (mods & Mods.SHIFT) != 0) grid.editorFormatWholeBuffer();
         },
         Key.B => {
             if ((mods & Mods.COMMAND) != 0) grid.editorEvalBuffer();

@@ -1695,6 +1695,7 @@ static NSMenuItem *AddModifiedFunctionKeyMenuItem(NSMenu *menu, NSString *title,
 }
 
 typedef NS_ENUM(uint32_t, MacSchemeEditorKeyCode) {
+    MacSchemeEditorKeyF = 3,
     MacSchemeEditorKeyQ = 12,
     MacSchemeEditorKeyW = 13,
     MacSchemeEditorKeyE = 14,
@@ -1785,6 +1786,7 @@ static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
 - (void)barfForward:(id)sender;
 - (void)reindentCurrentLine:(id)sender;
 - (void)reindentSelectionOrLine:(id)sender;
+- (void)formatSourceCode:(id)sender;
 @end
 
 @interface GraphicsPlaceholderView : NSView
@@ -2376,7 +2378,8 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
         menuItem.action == @selector(slurpForward:) ||
         menuItem.action == @selector(barfForward:) ||
         menuItem.action == @selector(reindentCurrentLine:) ||
-        menuItem.action == @selector(reindentSelectionOrLine:)) {
+        menuItem.action == @selector(reindentSelectionOrLine:) ||
+        menuItem.action == @selector(formatSourceCode:)) {
         return [self editorGridView] != nil;
     }
     if (menuItem.action == @selector(wrapSelectionInParentheses:)) {
@@ -2579,6 +2582,7 @@ static void *scheme_thread_entry(void *arg) {
     [sourceMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(sourceMenu, @"Re-indent Current Line", @selector(reindentCurrentLine:), @"\t", 0, self);
     AddMenuItem(sourceMenu, @"Re-indent Selection or Line", @selector(reindentSelectionOrLine:), @"q", NSEventModifierFlagOption, self);
+    AddMenuItem(sourceMenu, @"Format Source Code", @selector(formatSourceCode:), @"F", NSEventModifierFlagOption | NSEventModifierFlagShift, self);
 
     NSMenuItem *layoutRoot = [[NSMenuItem alloc] initWithTitle:@"Layout" action:nil keyEquivalent:@""];
     [mainMenu addItem:layoutRoot];
@@ -2793,6 +2797,11 @@ static void *scheme_thread_entry(void *arg) {
 - (void)reindentSelectionOrLine:(id)sender {
     (void)sender;
     [self dispatchEditorKeyCode:MacSchemeEditorKeyQ modifiers:MacSchemeGridModAlt];
+}
+
+- (void)formatSourceCode:(id)sender {
+    (void)sender;
+    [self dispatchEditorKeyCode:MacSchemeEditorKeyF modifiers:MacSchemeGridModAlt | MacSchemeGridModShift];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
