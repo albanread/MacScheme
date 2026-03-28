@@ -1790,6 +1790,7 @@ static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
 - (void)barfForward:(id)sender;
 - (void)reindentCurrentLine:(id)sender;
 - (void)reindentSelectionOrLine:(id)sender;
+- (void)gotoDefinition:(id)sender;
 - (void)formatSourceCode:(id)sender;
 - (void)tickSyntaxCheck:(NSTimer *)timer;
 @end
@@ -2382,10 +2383,17 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
         menuItem.action == @selector(spliceEnclosingForm:) ||
         menuItem.action == @selector(slurpForward:) ||
         menuItem.action == @selector(barfForward:) ||
+        menuItem.action == @selector(gotoDefinition:) ||
         menuItem.action == @selector(reindentCurrentLine:) ||
         menuItem.action == @selector(reindentSelectionOrLine:) ||
         menuItem.action == @selector(formatSourceCode:)) {
-        return [self editorGridView] != nil;
+        if ([self editorGridView] == nil) {
+            return NO;
+        }
+        if (menuItem.action == @selector(gotoDefinition:)) {
+            return grid_editor_can_goto_definition() != 0;
+        }
+        return YES;
     }
     if (menuItem.action == @selector(wrapSelectionInParentheses:)) {
         return [self editorGridView] != nil && [self editorHasSelection];
@@ -2579,6 +2587,7 @@ static void *scheme_thread_entry(void *arg) {
     AddModifiedFunctionKeyMenuItem(sourceMenu, @"Move Backward S-Expression", @selector(moveBackwardSexp:), NSLeftArrowFunctionKey, NSEventModifierFlagOption, self);
     AddModifiedFunctionKeyMenuItem(sourceMenu, @"Move Forward S-Expression", @selector(moveForwardSexp:), NSRightArrowFunctionKey, NSEventModifierFlagOption, self);
     AddModifiedFunctionKeyMenuItem(sourceMenu, @"Select Enclosing Form", @selector(selectEnclosingForm:), NSUpArrowFunctionKey, NSEventModifierFlagOption, self);
+    AddMenuItem(sourceMenu, @"Go to Definition", @selector(gotoDefinition:), @"", 0, self);
     [sourceMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(sourceMenu, @"Wrap Selection in Parentheses", @selector(wrapSelectionInParentheses:), @"w", NSEventModifierFlagControl | NSEventModifierFlagOption, self);
     AddModifiedFunctionKeyMenuItem(sourceMenu, @"Splice / Unwrap Enclosing Form", @selector(spliceEnclosingForm:), NSUpArrowFunctionKey, NSEventModifierFlagControl | NSEventModifierFlagOption, self);
@@ -2802,6 +2811,19 @@ static void *scheme_thread_entry(void *arg) {
 - (void)reindentSelectionOrLine:(id)sender {
     (void)sender;
     [self dispatchEditorKeyCode:MacSchemeEditorKeyQ modifiers:MacSchemeGridModAlt];
+}
+
+- (void)gotoDefinition:(id)sender {
+    (void)sender;
+    if (![self editorGridView]) {
+        NSBeep();
+        return;
+    }
+
+    [self focusEditorGrid];
+    if (grid_editor_goto_definition() == 0) {
+        NSBeep();
+    }
 }
 
 - (void)formatSourceCode:(id)sender {

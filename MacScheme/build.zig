@@ -3,6 +3,16 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const chez_lib_dir = b.option([]const u8, "chez-lib-dir", "Path to the architecture-specific Chez static libraries") orelse switch (target.result.cpu.arch) {
+        .aarch64 => "lib/arm64",
+        .x86_64 => "lib/intel64",
+        else => {
+            std.debug.panic("No bundled Chez libraries are available for target architecture '{s}'", .{@tagName(target.result.cpu.arch)});
+        },
+    };
+    const macos_sdk_lib_dir = b.option([]const u8, "macos-sdk-lib-dir", "Path to the macOS SDK usr/lib directory containing system .tbd stubs");
+    const macos_sdk_framework_dir = b.option([]const u8, "macos-sdk-framework-dir", "Path to the macOS SDK System/Library/Frameworks directory");
+    const macos_sdk_include_dir = b.option([]const u8, "macos-sdk-include-dir", "Path to the macOS SDK usr/include directory");
 
     const exe = b.addExecutable(.{
         .name = "MacScheme",
@@ -25,6 +35,7 @@ pub fn build(b: *std.Build) void {
         .flags = &.{
             "-fobjc-arc",
             "-D_GNU_SOURCE",
+            "-Wno-deprecated-declarations",
         },
     });
 
@@ -42,6 +53,7 @@ pub fn build(b: *std.Build) void {
             "-fno-rtti",
             "-Wall",
             "-Wno-unused-parameter",
+            "-Wno-deprecated-declarations",
         },
     });
 
@@ -58,6 +70,7 @@ pub fn build(b: *std.Build) void {
             "-fno-rtti",
             "-Wall",
             "-Wno-unused-parameter",
+            "-Wno-deprecated-declarations",
         },
     });
 
@@ -115,9 +128,18 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("chez"));
     exe.addIncludePath(b.path("src"));
     exe.addIncludePath(b.path("src/vendor/macgui/audio"));
+    if (macos_sdk_include_dir) |sdk_include_dir| {
+        exe.addSystemIncludePath(.{ .cwd_relative = sdk_include_dir });
+    }
 
     // Static libraries from Chez Scheme
-    exe.addLibraryPath(b.path("lib"));
+    exe.addLibraryPath(b.path(chez_lib_dir));
+    if (macos_sdk_lib_dir) |sdk_lib_dir| {
+        exe.addLibraryPath(.{ .cwd_relative = sdk_lib_dir });
+    }
+    if (macos_sdk_framework_dir) |sdk_framework_dir| {
+        exe.addFrameworkPath(.{ .cwd_relative = sdk_framework_dir });
+    }
     exe.linkSystemLibrary("kernel"); // libkernel.a
     exe.linkSystemLibrary("z"); // libz.a
     exe.linkSystemLibrary("lz4"); // liblz4.a

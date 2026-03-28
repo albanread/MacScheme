@@ -557,7 +557,7 @@
                                     (- (/ (exact->inexact (cdr dx-rv)) 3.0) 1.0)
                                     (+ 2.0 (* stage 0.15))
                                     180)))
-              (sound-click 0.8 0.03)
+                    (play-generated-sound (sound-click 0.8 0.03))
               (cons seed-3 (cons bomb bombs)))))
         (cons seed-1 bombs)))))
 
@@ -574,6 +574,11 @@
     (< (distance-squared (bullet-x bullet) (bullet-y bullet) (saucer-x saucer) (saucer-y saucer))
        (* 18.0 18.0))))
 
+(define (play-generated-sound sound-id)
+  (if (> sound-id 0)
+      (sound-play sound-id)
+      0))
+
 (define (process-bullet-hit-enemies bullet enemies formation-x formation-y)
   (if (null? enemies)
     (values #f '() 0 '())
@@ -582,7 +587,7 @@
         (let* ((pos (enemy-position enemy formation-x formation-y))
                (row (enemy-row enemy)))
           (music-play-id alien-boom-id 0.9)
-          (sound-explode 0.95 0.12)
+          (play-generated-sound (sound-explode 0.95 0.12))
           (values #t
                   (cdr enemies)
                   (enemy-score row)
@@ -605,7 +610,7 @@
           (if (<= hits-left 0)
             (begin
               (music-play-id saucer-death-id 1.0)
-              (sound-big-explosion 1.0 0.18)
+              (play-generated-sound (sound-big-explosion 1.0 0.18))
               (call-with-values
                 (lambda () (process-bullets (cdr bullets) enemies formation-x formation-y #f (+ score (+ 150 (* stage 25)))
                                             (cons (make-explosion (saucer-x saucer) (saucer-y saucer) 10.0 16 24) new-explosions)
@@ -613,7 +618,7 @@
                 (lambda (rest-bullets next-enemies next-saucer next-score next-explosions)
                   (values rest-bullets next-enemies next-saucer next-score next-explosions))))
             (begin
-              (sound-click 1.2 0.05)
+              (play-generated-sound (sound-click 1.2 0.05))
               (call-with-values
                 (lambda () (process-bullets (cdr bullets) enemies formation-x formation-y
                                             (make-saucer (saucer-x saucer) (saucer-y saucer) (saucer-dx saucer) hits-left (saucer-cooldown saucer))
@@ -659,7 +664,7 @@
       (if (and (= invuln 0) (bomb-hit-player? bomb player-x))
         (begin
           (music-play-id player-explodes-id 1.0)
-          (sound-big-explosion 0.95 0.15)
+          (play-generated-sound (sound-big-explosion 0.95 0.15))
           (values (cdr bombs)
                   #t
                   (cons (make-explosion player-x player-y 8.0 16 24) explosions)))
@@ -676,7 +681,7 @@
         (values #f seed '())
         (if (and (= next-cooldown 0) (= (modulo frame 20) 0))
           (begin
-            (sound-click 0.6 0.02)
+            (play-generated-sound (sound-click 0.6 0.02))
             (values (make-saucer next-x (saucer-y saucer) (saucer-dx saucer) (saucer-hits saucer) (+ 22 (quotient stage 2)))
                     seed
                     (list (make-bomb next-x (+ (saucer-y saucer) 8.0) 0.0 (+ 2.2 (* stage 0.1)) 160))))
@@ -808,7 +813,7 @@
                     (shot-bullets (if spawn-bullet?
                                     (begin
                                       (music-play-id perc-boom-id 0.65)
-                                      (sound-shoot 0.9 0.06)
+                                      (play-generated-sound (sound-shoot 0.9 0.06))
                                       (cons (make-player-bullet next-player-x (- player-y 18.0) 0.0 -6.8 90) bullets))
                                     bullets))
                     (shot-cooldown (if spawn-bullet? fire-cooldown-frames next-cooldown))
@@ -859,7 +864,7 @@
                                ((null? final-enemies)
                                 (music-stop)
                                 (music-play-id you-win-id 1.0)
-                                (sound-powerup 0.9 0.2)
+                                (play-generated-sound (sound-powerup 0.9 0.2))
                                 (gfx-clear 4 8 22)
                                 (draw-stars next-stars)
                                 (draw-explosions bomb-explosions)

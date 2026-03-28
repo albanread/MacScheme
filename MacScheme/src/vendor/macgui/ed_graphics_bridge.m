@@ -1722,14 +1722,10 @@ void gfx_dialog_set_selection_bridge(uint16_t control_id, int32_t index) {
     NSString *shaderSource = kEmbeddedGraphicsMetalSource;
 
     MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
-    if (@available(macOS 15.0, *)) {
-        options.mathMode = MTLMathModeFast;
-    } else {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        options.fastMathEnabled = YES;
+    options.fastMathEnabled = YES;
 #pragma clang diagnostic pop
-    }
 
     id<MTLLibrary> library = [device newLibraryWithSource:shaderSource
                                                  options:options

@@ -27,9 +27,11 @@ zig-cache/
 *.dSYM/
 
 # Keep build-required Chez static libraries
-!lib/libkernel.a
-!lib/liblz4.a
-!lib/libz.a
+!lib/arm64/
+!lib/arm64/libkernel.a
+!lib/arm64/liblz4.a
+!lib/arm64/libz.a
+!lib/intel64/
 
 # Executables / app bundles
 *.out
@@ -66,6 +68,9 @@ src/vendor/macgui/macscheme_graphics_runtime.zig
 # Keep build-required boot images
 !resources/petite.boot
 !resources/scheme.boot
+!resources/intel64/
+!resources/intel64/petite.boot
+!resources/intel64/scheme.boot
 
 # Crash dumps
 core

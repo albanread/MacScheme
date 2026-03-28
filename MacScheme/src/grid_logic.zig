@@ -394,6 +394,14 @@ const GridState = struct {
         if (self.editor_view_row > max_start) self.editor_view_row = max_start;
     }
 
+    fn revealEditorRow(self: *GridState, row: usize, rows: usize) void {
+        const safe_rows = @max(@as(usize, 1), rows);
+        const max_start = self.editorMaxVisibleStartRow(safe_rows);
+        const half_window = safe_rows / 2;
+        const target_top = row -| half_window;
+        self.editor_view_row = @min(target_top, max_start);
+    }
+
     fn editorScrollViewport(self: *GridState, delta_rows: isize) void {
         if (delta_rows == 0) return;
         const rows = visibleRows(self);
@@ -2756,6 +2764,306 @@ fn editorSelectionToUtf8(grid: *const GridState, range: EditorRange) ?[]u8 {
     return ed_buffer.codepointsToUtf8(allocator, cps) catch null;
 }
 
+fn editorRangeEqualsAscii(grid: *const GridState, range: EditorRange, ascii: []const u8) bool {
+    const len = range.end - range.start;
+    if (len != ascii.len) return false;
+
+    const buf = grid.editorBufferConst();
+    var i: usize = 0;
+    while (i < ascii.len) : (i += 1) {
+        if (buf.charAt(range.start + i) != @as(u32, ascii[i])) return false;
+    }
+    return true;
+}
+
+fn editorRangesEqual(grid: *const GridState, lhs: EditorRange, rhs: EditorRange) bool {
+    const lhs_len = lhs.end - lhs.start;
+    const rhs_len = rhs.end - rhs.start;
+    if (lhs_len != rhs_len) return false;
+
+    const buf = grid.editorBufferConst();
+    var i: usize = 0;
+    while (i < lhs_len) : (i += 1) {
+        if (buf.charAt(lhs.start + i) != buf.charAt(rhs.start + i)) return false;
+    }
+    return true;
+}
+
+fn editorSkipTriviaForward(grid: *const GridState, start: usize, limit: usize) usize {
+    const buf = grid.editorBufferConst();
+    var i = start;
+
+    while (i < limit) {
+        const cp = buf.charAt(i) orelse break;
+        if (isWhitespace(cp)) {
+            i += 1;
+            continue;
+        }
+        if (cp == ';') {
+            i += 1;
+            while (i < limit) : (i += 1) {
+                if (buf.charAt(i) == '\n') {
+                    i += 1;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (cp == '#' and i + 1 < limit and buf.charAt(i + 1) == '|') {
+            i += 2;
+            var depth: usize = 1;
+            while (i < limit and depth > 0) {
+                const inner = buf.charAt(i) orelse break;
+                if (inner == '#' and i + 1 < limit and buf.charAt(i + 1) == '|') {
+                    depth += 1;
+                    i += 2;
+                    continue;
+                }
+                if (inner == '|' and i + 1 < limit and buf.charAt(i + 1) == '#') {
+                    depth -= 1;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        break;
+    }
+
+    return i;
+}
+
+fn editorFormRangeStartingAt(grid: *const GridState, start: usize, limit: usize) ?EditorRange {
+    const buf = grid.editorBufferConst();
+    const pos = editorSkipTriviaForward(grid, start, limit);
+    if (pos >= limit) return null;
+
+    const cp = buf.charAt(pos) orelse return null;
+    if (cp == '(' or cp == '[') {
+        const close = grid.editorFindMatchingBracket(pos) orelse return null;
+        if (close >= limit) return null;
+        return .{ .start = pos, .end = close + 1 };
+    }
+    if (cp == '"') {
+        var i = pos + 1;
+        var escape = false;
+        while (i < limit) : (i += 1) {
+            const sc = buf.charAt(i) orelse break;
+            if (escape) {
+                escape = false;
+            } else if (sc == '\\') {
+                escape = true;
+            } else if (sc == '"') {
+                return .{ .start = pos, .end = i + 1 };
+            }
+        }
+        return .{ .start = pos, .end = limit };
+    }
+
+    var end = pos;
+    while (end < limit) : (end += 1) {
+        const next = buf.charAt(end) orelse break;
+        if (tokenTerminator(next)) break;
+    }
+    if (end == pos) return null;
+    return .{ .start = pos, .end = end };
+}
+
+fn editorListFirstElementRange(grid: *const GridState, list_range: EditorRange) ?EditorRange {
+    if (list_range.end <= list_range.start + 1) return null;
+    return editorFormRangeStartingAt(grid, list_range.start + 1, list_range.end - 1);
+}
+
+fn editorNextSiblingRange(grid: *const GridState, range: EditorRange, limit: usize) ?EditorRange {
+    return editorFormRangeStartingAt(grid, range.end, limit);
+}
+
+fn editorFindSymbolInSimpleList(grid: *const GridState, list_range: EditorRange, symbol: EditorRange, skip_dot: bool) ?EditorRange {
+    if (list_range.end <= list_range.start + 1) return null;
+
+    var cursor = list_range.start + 1;
+    const limit = list_range.end - 1;
+    while (editorFormRangeStartingAt(grid, cursor, limit)) |item| {
+        if (!(skip_dot and editorRangeEqualsAscii(grid, item, ".")) and editorRangesEqual(grid, item, symbol)) {
+            return item;
+        }
+        cursor = item.end;
+    }
+    return null;
+}
+
+fn editorFindSymbolInLetBindings(grid: *const GridState, bindings_range: EditorRange, symbol: EditorRange) ?EditorRange {
+    if (bindings_range.end <= bindings_range.start + 1) return null;
+
+    var cursor = bindings_range.start + 1;
+    const limit = bindings_range.end - 1;
+    while (editorFormRangeStartingAt(grid, cursor, limit)) |binding| {
+        if (binding.end > binding.start + 1 and (editorRangeEqualsAscii(grid, binding, ".") == false)) {
+            const first = editorListFirstElementRange(grid, binding) orelse {
+                cursor = binding.end;
+                continue;
+            };
+
+            if ((first.end > first.start + 1) and (editorRangeEqualsAscii(grid, first, ".") == false)) {
+                const first_cp = grid.editorBufferConst().charAt(first.start) orelse 0;
+                if (first_cp == '(' or first_cp == '[') {
+                    if (editorFindSymbolInSimpleList(grid, first, symbol, true)) |match| return match;
+                } else if (editorRangesEqual(grid, first, symbol)) {
+                    return first;
+                }
+            }
+        }
+        cursor = binding.end;
+    }
+    return null;
+}
+
+fn editorFindDefinitionNameInDefineForm(grid: *const GridState, form_range: EditorRange) ?EditorRange {
+    const head = editorListFirstElementRange(grid, form_range) orelse return null;
+    if (!(editorRangeEqualsAscii(grid, head, "define") or editorRangeEqualsAscii(grid, head, "define-syntax"))) return null;
+
+    const second = editorNextSiblingRange(grid, head, form_range.end - 1) orelse return null;
+    const second_cp = grid.editorBufferConst().charAt(second.start) orelse return null;
+    if (second_cp == '(' or second_cp == '[') {
+        return editorListFirstElementRange(grid, second);
+    }
+    return second;
+}
+
+fn editorFindDefinitionInImmediateForms(grid: *const GridState, scope_range: EditorRange, body_start: usize, symbol: EditorRange) ?EditorRange {
+    const limit = scope_range.end -| 1;
+    var cursor = body_start;
+    while (editorFormRangeStartingAt(grid, cursor, limit)) |item| {
+        if (editorFindDefinitionNameInDefineForm(grid, item)) |name| {
+            if (editorRangesEqual(grid, name, symbol)) return name;
+        }
+        cursor = item.end;
+    }
+    return null;
+}
+
+fn editorFindDefinitionInScopeForm(grid: *const GridState, scope_range: EditorRange, symbol: EditorRange) ?EditorRange {
+    const head = editorListFirstElementRange(grid, scope_range) orelse return null;
+
+    if (editorRangeEqualsAscii(grid, head, "lambda")) {
+        const params = editorNextSiblingRange(grid, head, scope_range.end - 1) orelse return null;
+        if (editorFindSymbolInSimpleList(grid, params, symbol, true)) |match| return match;
+        return editorFindDefinitionInImmediateForms(grid, scope_range, params.end, symbol);
+    }
+
+    if (editorRangeEqualsAscii(grid, head, "define") or editorRangeEqualsAscii(grid, head, "define-syntax")) {
+        const name_or_signature = editorNextSiblingRange(grid, head, scope_range.end - 1) orelse return null;
+        const first_cp = grid.editorBufferConst().charAt(name_or_signature.start) orelse return null;
+        if (first_cp == '(' or first_cp == '[') {
+            const name = editorListFirstElementRange(grid, name_or_signature) orelse return null;
+            if (editorRangesEqual(grid, name, symbol)) return name;
+            if (editorFindSymbolInSimpleList(grid, name_or_signature, symbol, true)) |match| {
+                if (!editorRangesEqual(grid, match, name)) return match;
+            }
+        } else if (editorRangesEqual(grid, name_or_signature, symbol)) {
+            return name_or_signature;
+        }
+        return editorFindDefinitionInImmediateForms(grid, scope_range, name_or_signature.end, symbol);
+    }
+
+    if (editorRangeEqualsAscii(grid, head, "let") or
+        editorRangeEqualsAscii(grid, head, "let*") or
+        editorRangeEqualsAscii(grid, head, "letrec") or
+        editorRangeEqualsAscii(grid, head, "letrec*") or
+        editorRangeEqualsAscii(grid, head, "let-values"))
+    {
+        const second = editorNextSiblingRange(grid, head, scope_range.end - 1) orelse return null;
+        const second_cp = grid.editorBufferConst().charAt(second.start) orelse return null;
+
+        var bindings = second;
+        var body_start = second.end;
+        if (editorRangeEqualsAscii(grid, head, "let") and second_cp != '(' and second_cp != '[') {
+            if (editorRangesEqual(grid, second, symbol)) return second;
+            bindings = editorNextSiblingRange(grid, second, scope_range.end - 1) orelse return null;
+            body_start = bindings.end;
+        }
+
+        if (editorFindSymbolInLetBindings(grid, bindings, symbol)) |match| return match;
+        return editorFindDefinitionInImmediateForms(grid, scope_range, body_start, symbol);
+    }
+
+    return editorFindDefinitionInImmediateForms(grid, scope_range, head.end, symbol);
+}
+
+fn editorFindDefinitionForToken(grid: *const GridState, symbol: EditorRange) ?EditorRange {
+    if (isSpecialFormTokenRange(grid, symbol)) return null;
+
+    var target_start = symbol.start;
+    var target_end = symbol.end;
+    var skip_exact = false;
+    while (grid.editorFindEnclosingForm(target_start, target_end, skip_exact)) |scope_range| {
+        if (editorFindDefinitionInScopeForm(grid, scope_range, symbol)) |match| return match;
+        target_start = scope_range.start;
+        target_end = scope_range.end;
+        skip_exact = true;
+    }
+
+    const total = grid.editorBufferConst().length();
+    var cursor: usize = 0;
+    while (editorFormRangeStartingAt(grid, cursor, total)) |form| {
+        if (editorFindDefinitionNameInDefineForm(grid, form)) |name| {
+            if (editorRangesEqual(grid, name, symbol)) return name;
+        }
+        cursor = form.end;
+    }
+
+    return null;
+}
+
+fn isSpecialFormTokenRange(grid: *const GridState, range: EditorRange) bool {
+    const forms = [_][]const u8{
+        "define", "lambda", "let", "let*", "letrec", "let-values", "if", "cond", "begin", "when", "unless",
+        "do", "case", "and", "or", "define-syntax", "syntax-rules", "guard", "parameterize", "with-exception-handler", "call-with-values",
+    };
+    for (forms) |form| {
+        if (editorRangeEqualsAscii(grid, range, form)) return true;
+    }
+    return false;
+}
+
+fn editorDefinitionLookupRangeAtOffset(grid: *const GridState, offset: usize) ?EditorRange {
+    if (grid.editorSelectionRange()) |selection| {
+        if (editorTokenRangeAtOffset(grid, selection.start)) |token| {
+            if (token.start == selection.start and token.end == selection.end and offset >= selection.start and offset <= selection.end) {
+                return token;
+            }
+        }
+    }
+    return editorTokenRangeAtOffset(grid, offset);
+}
+
+fn editorCanGotoDefinitionAtOffset(grid: *const GridState, offset: usize) bool {
+    const symbol = editorDefinitionLookupRangeAtOffset(grid, offset) orelse return false;
+    return editorFindDefinitionForToken(grid, symbol) != null;
+}
+
+fn editorGotoDefinitionAtOffset(grid: *GridState, offset: usize) bool {
+    const symbol = editorDefinitionLookupRangeAtOffset(grid, offset) orelse return false;
+    const definition = editorFindDefinitionForToken(grid, symbol) orelse return false;
+    const definition_line = grid.editorBuffer().offsetToLineCol(definition.start).line;
+
+    grid.editor_selection_anchor = definition.start;
+    grid.mouse_editor_anchor = definition.start;
+    grid.setEditorSelection(definition.start, definition.end);
+    grid.editor_cursor_offset = definition.start;
+    grid.syncEditorCursorFromOffset(true);
+    grid.revealEditorRow(definition_line, visibleRows(grid));
+    return true;
+}
+
+fn editorCurrentLookupOffset(grid: *const GridState) usize {
+    if (grid.editorSelectionRange()) |selection| {
+        return selection.start;
+    }
+    return grid.editor_cursor_offset;
+}
+
 fn replEditableSelectionToUtf8(grid: *const GridState) ?[]u8 {
     const range = grid.entryMarkedRange() orelse return null;
     return entryRangeToUtf8(grid, range.start, range.end);
@@ -4320,6 +4628,38 @@ export fn grid_run_editor_syntax_check(revision: u64) void {
     grid.editor_syntax_error_row = pos.line;
     grid.editor_syntax_error_col = pos.col;
     grid.editor_syntax_error_message = message;
+}
+
+export fn grid_editor_can_goto_definition() i32 {
+    const grid = &g_grids[0];
+    if (!grid.initialized) return 0;
+    return if (editorCanGotoDefinitionAtOffset(grid, editorCurrentLookupOffset(grid))) 1 else 0;
+}
+
+export fn grid_editor_goto_definition() i32 {
+    var grid = &g_grids[0];
+    grid.ensureInit(0);
+    return if (editorGotoDefinitionAtOffset(grid, editorCurrentLookupOffset(grid))) 1 else 0;
+}
+
+export fn grid_editor_can_goto_definition_at(row: i32, col: i32) i32 {
+    const grid = &g_grids[0];
+    if (!grid.initialized) return 0;
+
+    const clamped_row: usize = if (row <= 0) 0 else @as(usize, @intCast(row));
+    const clamped_col: usize = if (col <= 0) 0 else @as(usize, @intCast(col));
+    const target = editorOffsetForScreenCell(grid, clamped_row, clamped_col);
+    return if (editorCanGotoDefinitionAtOffset(grid, target)) 1 else 0;
+}
+
+export fn grid_editor_goto_definition_at(row: i32, col: i32) i32 {
+    var grid = &g_grids[0];
+    grid.ensureInit(0);
+
+    const clamped_row: usize = if (row <= 0) 0 else @as(usize, @intCast(row));
+    const clamped_col: usize = if (col <= 0) 0 else @as(usize, @intCast(col));
+    const target = editorOffsetForScreenCell(grid, clamped_row, clamped_col);
+    return if (editorGotoDefinitionAtOffset(grid, target)) 1 else 0;
 }
 
 export fn grid_get_editor_modified() i32 {

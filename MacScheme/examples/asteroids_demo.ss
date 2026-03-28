@@ -251,11 +251,17 @@
     ((medium) 35)
     (else 60)))
 
+(define (play-generated-sound sound-id)
+  (if (> sound-id 0)
+      (sound-play sound-id)
+      0))
+
 (define (play-asteroid-hit-sound asteroid)
-  (case (asteroid-tier asteroid)
-    ((large) (sound-explode 1.05 0.18))
-    ((medium) (sound-small-explosion 1.0 0.16))
-    (else (sound-click 1.1 0.05))))
+  (play-generated-sound
+    (case (asteroid-tier asteroid)
+      ((large) (sound-explode 1.05 0.18))
+      ((medium) (sound-small-explosion 1.0 0.16))
+      (else (sound-click 1.1 0.05)))))
 
 (define (split-asteroid asteroid)
   ; Large rocks split into medium ones, medium rocks split into small ones,
@@ -422,7 +428,7 @@
                  (next-cooldown (max 0 (- cooldown 1)))
                  (fired-bullets (if (and fire? (= next-cooldown 0) (not game-over?))
                                     (begin
-                                      (sound-shoot 0.85 0.07)
+                                      (play-generated-sound (sound-shoot 0.85 0.07))
                                       (cons (make-bullet (+ next-ship-x (* (cos next-angle) 14.0))
                                                          (+ next-ship-y (* (sin next-angle) 14.0))
                                                          (+ (* (cos next-angle) 7.0) (* next-ship-dx 0.5))
@@ -445,7 +451,7 @@
                                  (any-ship-collision? next-ship-x next-ship-y resolved-asteroids))))
             (if ship-hit?
                 (let ((remaining-lives (- lives 1)))
-                  (sound-big-explosion 1.2 0.28)
+                  (play-generated-sound (sound-big-explosion 1.2 0.28))
                   (gfx-clear 6 8 18)
                   (draw-asteroids resolved-asteroids)
                   (draw-bullets resolved-bullets)
@@ -468,7 +474,7 @@
                         90
                         (<= remaining-lives 0)))
                         (if (null? resolved-asteroids)
-                        (let* ((_ (sound-powerup 0.9 0.25))
+                        (let* ((_ (play-generated-sound (sound-powerup 0.9 0.25)))
                            (spawned (spawn-asteroids (rand-next resolved-seed) asteroid-count))
                            (restart-seed (car spawned))
                            (restart-asteroids (cdr spawned)))

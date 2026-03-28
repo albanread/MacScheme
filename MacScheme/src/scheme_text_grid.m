@@ -133,6 +133,13 @@ static void gridCellForEvent(SchemeTextGrid *grid, NSEvent *event, int *outRow, 
     *outRow = (int)floor(yFromTop / MAX(g_cellHeight, 1.0f));
 }
 
+@interface SchemeTextGrid ()
+
+@property (nonatomic, assign) int contextMenuRow;
+@property (nonatomic, assign) int contextMenuCol;
+
+@end
+
 // ─── Glyph Atlas Builder ─────────────────────────────────────────────────────
 //
 // Ported directly from FasterBASIC-public/editor/macgui/ed_metal_bridge.m.
@@ -366,6 +373,8 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
     self = [super initWithFrame:frameRect device:MTLCreateSystemDefaultDevice()];
     if (self) {
         self.gridId           = gridId;
+        self.contextMenuRow   = -1;
+        self.contextMenuCol   = -1;
         self.pendingKeyEvents = [NSMutableArray array];
         self.colorPixelFormat          = MTLPixelFormatBGRA8Unorm;
         self.preferredFramesPerSecond  = 60;
@@ -460,10 +469,35 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
     grid_clear_repl();
 }
 
+- (void)gotoDefinitionFromContextMenu:(id)sender {
+    (void)sender;
+    if (self.gridId != 0) return;
+
+    BOOL jumped = NO;
+    if (self.contextMenuRow >= 0 && self.contextMenuCol >= 0) {
+        jumped = grid_editor_goto_definition_at(self.contextMenuRow, self.contextMenuCol) != 0;
+    } else {
+        jumped = grid_editor_goto_definition() != 0;
+    }
+
+    if (!jumped) {
+        NSBeep();
+    }
+}
+
 - (NSMenu *)menuForEvent:(NSEvent *)event {
     g_activeGrid = self;
     [self.window makeFirstResponder:self];
-    (void)event;
+
+    self.contextMenuRow = -1;
+    self.contextMenuCol = -1;
+    if (self.gridId == 0) {
+        int row = 0;
+        int col = 0;
+        gridCellForEvent(self, event, &row, &col);
+        self.contextMenuRow = row;
+        self.contextMenuCol = col;
+    }
 
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Context"];
     menu.autoenablesItems = NO;
@@ -477,6 +511,18 @@ static BOOL buildGlyphAtlas(id<MTLDevice> device, const char *fontName, float fo
     pasteItem.target = self;
     pasteItem.enabled = [self hasPasteboardText];
     [menu addItem:pasteItem];
+
+    if (self.gridId == 0) {
+        BOOL canGoto = self.contextMenuRow >= 0 && self.contextMenuCol >= 0 &&
+                       grid_editor_can_goto_definition_at(self.contextMenuRow, self.contextMenuCol) != 0;
+        if (canGoto) {
+            [menu addItem:[NSMenuItem separatorItem]];
+            NSMenuItem *gotoItem = [[NSMenuItem alloc] initWithTitle:@"Go to Definition" action:@selector(gotoDefinitionFromContextMenu:) keyEquivalent:@""];
+            gotoItem.target = self;
+            gotoItem.enabled = YES;
+            [menu addItem:gotoItem];
+        }
+    }
 
     if (self.gridId == 1) {
         [menu addItem:[NSMenuItem separatorItem]];

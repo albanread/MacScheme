@@ -39,6 +39,21 @@ To build MacScheme from source, you will need macOS and the [Zig compiler](https
    zig build
    ```
 
+   On Intel Macs, Homebrew's `chezscheme` formula installs the exact static archives this project expects. If `MacScheme/lib/intel64` is empty, you can populate it with:
+   ```bash
+   brew install chezscheme
+   cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/libkernel.a MacScheme/lib/intel64/
+   cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/liblz4.a MacScheme/lib/intel64/
+   cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/libz.a MacScheme/lib/intel64/
+   cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/petite.boot MacScheme/resources/intel64/
+   cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/scheme.boot MacScheme/resources/intel64/
+   ```
+
+   The Intel package must use the matching Chez boot files as well as the Intel static archives. After that, package an Intel build with:
+   ```bash
+   ./package.sh intel64
+   ```
+
 3. Alternatively, to build, package the macOS `.app` bundle, and deep-sign it, you can run the provided packaging scripts in the root directory:
    ```bash
    ./package.sh
