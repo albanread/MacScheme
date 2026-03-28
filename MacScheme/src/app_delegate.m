@@ -270,6 +270,7 @@ typedef NS_ENUM(NSInteger, MacSchemePane) {
     MacSchemePaneEditor = 0,
     MacSchemePaneRepl = 1,
     MacSchemePaneGraphics = 2,
+    MacSchemePaneDocs = 3,
 };
 
 typedef NS_ENUM(NSInteger, MacSchemeLayoutPreset) {
@@ -286,6 +287,7 @@ static const CGFloat kMacSchemeBalancedMainRatio = 0.60;
 static const CGFloat kMacSchemeBalancedRightRatio = 0.525;
 static const CGFloat kMacSchemeEditorReplMainRatio = 0.68;
 static const CGFloat kMacSchemeEditorGraphicsMainRatio = 0.56;
+static const CGFloat kMacSchemeDocsPaneRatio = 0.28;
 
 static CGFloat ClampSplitRatio(CGFloat ratio) {
     if (ratio < 0.15) return 0.15;
@@ -1361,90 +1363,7 @@ static NSString *MacSchemeHelpFallbackHTML(void) {
             escapedRoot];
 }
 
-static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
-    if (!helpWindow) return;
-
-    NSWindow *editorWindow = g_app_delegate.window ?: [NSApp mainWindow];
-    if (editorWindow == helpWindow) {
-        editorWindow = [NSApp keyWindow];
-    }
-    if (editorWindow == helpWindow) {
-        editorWindow = nil;
-    }
-
-    NSScreen *screen = editorWindow ? editorWindow.screen : [NSScreen mainScreen];
-    if (!screen) return;
-
-    NSRect screenFrame = screen.visibleFrame;
-    const CGFloat gap = 8.0;
-    const CGFloat desiredHelpWidth = 480.0;
-    const CGFloat minHelpWidth = 360.0;
-
-    if (editorWindow) {
-        NSRect editorFrame = editorWindow.frame;
-
-        if (editorFrame.origin.x < screenFrame.origin.x) {
-            editorFrame.origin.x = screenFrame.origin.x;
-        }
-        if (editorFrame.origin.y < screenFrame.origin.y) {
-            editorFrame.origin.y = screenFrame.origin.y;
-        }
-        if (NSMaxY(editorFrame) > NSMaxY(screenFrame)) {
-            editorFrame.origin.y = NSMaxY(screenFrame) - editorFrame.size.height;
-        }
-
-        CGFloat availableRight = NSMaxX(screenFrame) - NSMaxX(editorFrame) - gap;
-        if (availableRight < desiredHelpWidth) {
-            CGFloat maxShiftLeft = editorFrame.origin.x - screenFrame.origin.x;
-            CGFloat needed = desiredHelpWidth - availableRight;
-            CGFloat shift = MIN(maxShiftLeft, needed);
-            editorFrame.origin.x -= shift;
-            availableRight += shift;
-
-            if (availableRight < desiredHelpWidth) {
-                CGFloat minEditorWidth = editorWindow.minSize.width;
-                CGFloat reduce = desiredHelpWidth - availableRight;
-                CGFloat newWidth = MAX(minEditorWidth, editorFrame.size.width - reduce);
-                availableRight += (editorFrame.size.width - newWidth);
-                editorFrame.size.width = newWidth;
-            }
-        }
-
-        [editorWindow setFrame:editorFrame display:YES animate:YES];
-
-        availableRight = NSMaxX(screenFrame) - NSMaxX(editorFrame) - gap;
-        CGFloat helpWidth = MIN(desiredHelpWidth, availableRight);
-        if (helpWidth < minHelpWidth) {
-            helpWidth = MIN(minHelpWidth, availableRight);
-        }
-        if (helpWidth < 200.0) {
-            helpWidth = MAX(200.0, availableRight);
-        }
-
-        CGFloat helpX = NSMaxX(editorFrame) + gap;
-        CGFloat helpHeight = screenFrame.size.height;
-        CGFloat helpY = screenFrame.origin.y;
-
-        if (helpX + helpWidth > NSMaxX(screenFrame)) {
-            helpX = NSMaxX(screenFrame) - helpWidth;
-        }
-
-        [helpWindow setFrame:NSMakeRect(helpX, helpY, helpWidth, helpHeight)
-                     display:YES
-                     animate:YES];
-    } else {
-        CGFloat helpWidth = MIN(desiredHelpWidth, screenFrame.size.width);
-        CGFloat helpX = NSMaxX(screenFrame) - helpWidth;
-        [helpWindow setFrame:NSMakeRect(helpX,
-                                        screenFrame.origin.y,
-                                        helpWidth,
-                                        screenFrame.size.height)
-                     display:YES
-                     animate:YES];
-    }
-}
-
-@interface MacSchemeHelpWindowController : NSWindowController <WKNavigationDelegate>
+@interface MacSchemeHelpPaneController : NSViewController <WKNavigationDelegate>
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) NSView *navigationBar;
 @property (nonatomic, strong) NSButton *backButton;
@@ -1458,27 +1377,14 @@ static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
 - (void)updateNavigationControls;
 @end
 
-@implementation MacSchemeHelpWindowController
+@implementation MacSchemeHelpPaneController
 
 - (instancetype)init {
-    NSRect screenRect = [[NSScreen mainScreen] visibleFrame];
-    const CGFloat defaultWidth = 480.0;
-    const CGFloat defaultHeight = 640.0;
-    NSRect windowRect = NSMakeRect(screenRect.origin.x + (screenRect.size.width - defaultWidth) * 0.5,
-                                   screenRect.origin.y + (screenRect.size.height - defaultHeight) * 0.5,
-                                   defaultWidth,
-                                   defaultHeight);
-
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:windowRect
-                                                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
-                                                     backing:NSBackingStoreBuffered
-                                                       defer:NO];
-    [window setTitle:@"Scheme Help"];
-
-    self = [super initWithWindow:window];
+        self = [super initWithNibName:nil bundle:nil];
     if (self) {
         WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-        NSView *contentView = window.contentView;
+                NSView *contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 480, 640)];
+                self.view = contentView;
         const CGFloat navBarHeight = 38.0;
 
         _navigationBar = [[NSView alloc] initWithFrame:NSMakeRect(0,
@@ -1520,12 +1426,6 @@ static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
 }
 
 - (void)showHomePage {
-    layoutSchemeHelpWindow(self.window);
-    if (!self.window.isVisible) {
-        [self showWindow:nil];
-    }
-    [self.window makeKeyAndOrderFront:nil];
-
     NSURL *entryURL = MacSchemeHelpEntryURL();
     if (entryURL) {
         NSURL *docsRootURL = [NSURL fileURLWithPath:MacSchemeDocsRootPath() isDirectory:YES];
@@ -1537,11 +1437,6 @@ static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
 }
 
 - (void)navigateBack {
-    layoutSchemeHelpWindow(self.window);
-    if (!self.window.isVisible) {
-        [self showWindow:nil];
-    }
-    [self.window makeKeyAndOrderFront:nil];
     if (self.webView.canGoBack) {
         [self.webView goBack];
     }
@@ -1549,11 +1444,6 @@ static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
 }
 
 - (void)navigateForward {
-    layoutSchemeHelpWindow(self.window);
-    if (!self.window.isVisible) {
-        [self showWindow:nil];
-    }
-    [self.window makeKeyAndOrderFront:nil];
     if (self.webView.canGoForward) {
         [self.webView goForward];
     }
@@ -1602,7 +1492,7 @@ static void layoutSchemeHelpWindow(NSWindow *helpWindow) {
 
 @end
 
-static MacSchemeHelpWindowController *gMacSchemeHelpController = nil;
+static MacSchemeHelpPaneController *gMacSchemeHelpController = nil;
 
 static NSString *CurrentEditorPath(void) {
     size_t pathLen = 0;
@@ -1758,13 +1648,16 @@ static void MacSchemeClearAllGraphicsBuffers(int64_t colourIndex) {
 @property (strong) NSSplitViewController *rightSplitController;
 @property (strong) NSSplitViewItem *editorSplitItem;
 @property (strong) NSSplitViewItem *rightSplitItem;
+@property (strong) NSSplitViewItem *docsSplitItem;
 @property (strong) NSSplitViewItem *graphicsSplitItem;
 @property (strong) NSSplitViewItem *replSplitItem;
 @property (assign) BOOL editorPaneVisible;
 @property (assign) BOOL replPaneVisible;
 @property (assign) BOOL graphicsPaneVisible;
+@property (assign) BOOL docsPaneVisible;
 @property (assign) CGFloat savedMainSplitRatio;
 @property (assign) CGFloat savedRightSplitRatio;
+@property (assign) CGFloat savedDocsSplitRatio;
 @property (assign) MacSchemeLayoutPreset currentLayoutPreset;
 @property (strong) NSTimer *syntaxCheckTimer;
 @property (assign) uint64_t lastSyntaxCheckedRevision;
@@ -2180,6 +2073,7 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
     if (self.editorPaneVisible) count++;
     if (self.replPaneVisible) count++;
     if (self.graphicsPaneVisible) count++;
+    if (self.docsPaneVisible) count++;
     return count;
 }
 
@@ -2188,6 +2082,7 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
         case MacSchemePaneEditor: return self.editorPaneVisible;
         case MacSchemePaneRepl: return self.replPaneVisible;
         case MacSchemePaneGraphics: return self.graphicsPaneVisible;
+        case MacSchemePaneDocs: return self.docsPaneVisible;
     }
     return NO;
 }
@@ -2206,10 +2101,20 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 }
 
 - (void)captureVisibleSplitRatios {
+    CGFloat width = self.splitViewController.splitView.bounds.size.width;
+    CGFloat docsWidth = 0.0;
+    if (self.docsSplitItem && !self.docsSplitItem.isCollapsed) {
+        docsWidth = self.docsSplitItem.viewController.view.frame.size.width;
+        if (width > 1.0) {
+            self.savedDocsSplitRatio = ClampSplitRatio(docsWidth / width);
+        }
+    }
     if (self.editorSplitItem && self.rightSplitItem && !self.editorSplitItem.isCollapsed && !self.rightSplitItem.isCollapsed) {
         CGFloat width = self.splitViewController.splitView.bounds.size.width;
-        if (width > 1.0) {
-            self.savedMainSplitRatio = ClampSplitRatio(FirstSplitSubviewExtent(self.splitViewController.splitView) / width);
+        CGFloat primaryWidth = width - docsWidth;
+        if (primaryWidth > 1.0) {
+            CGFloat editorWidth = self.editorSplitItem.viewController.view.frame.size.width;
+            self.savedMainSplitRatio = ClampSplitRatio(editorWidth / primaryWidth);
         }
     }
     if (self.graphicsSplitItem && self.replSplitItem && !self.graphicsSplitItem.isCollapsed && !self.replSplitItem.isCollapsed) {
@@ -2220,14 +2125,16 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
     }
 }
 
-- (void)applyPaneVisibilityWithMainRatio:(CGFloat)mainRatio rightRatio:(CGFloat)rightRatio {
-    if (!self.editorPaneVisible && !self.replPaneVisible && !self.graphicsPaneVisible) {
+- (void)applyPaneVisibilityWithMainRatio:(CGFloat)mainRatio rightRatio:(CGFloat)rightRatio docsRatio:(CGFloat)docsRatio {
+    if (!self.editorPaneVisible && !self.replPaneVisible && !self.graphicsPaneVisible && !self.docsPaneVisible) {
         self.editorPaneVisible = YES;
     }
 
     BOOL rightVisible = self.replPaneVisible || self.graphicsPaneVisible;
+    BOOL docsVisible = self.docsPaneVisible;
     self.editorSplitItem.collapsed = !self.editorPaneVisible;
     self.rightSplitItem.collapsed = !rightVisible;
+    self.docsSplitItem.collapsed = !docsVisible;
     self.graphicsSplitItem.collapsed = !self.graphicsPaneVisible;
     self.replSplitItem.collapsed = !self.replPaneVisible;
 
@@ -2235,10 +2142,19 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
     [self.splitViewController.view layoutSubtreeIfNeeded];
     [self.rightSplitController.view layoutSubtreeIfNeeded];
 
-    if (self.editorPaneVisible && rightVisible) {
+    CGFloat width = self.splitViewController.splitView.bounds.size.width;
+    CGFloat docsWidth = docsVisible && width > 1.0 ? width * ClampSplitRatio(docsRatio) : 0.0;
+    CGFloat primaryWidth = width - docsWidth;
+
+    if (self.editorPaneVisible && rightVisible && primaryWidth > 1.0) {
+        [self.splitViewController.splitView setPosition:primaryWidth * ClampSplitRatio(mainRatio) ofDividerAtIndex:0];
+    }
+    if (docsVisible) {
         CGFloat width = self.splitViewController.splitView.bounds.size.width;
-        if (width > 1.0) {
-            [self.splitViewController.splitView setPosition:width * ClampSplitRatio(mainRatio) ofDividerAtIndex:0];
+        NSInteger visibleBeforeDocs = (self.editorPaneVisible ? 1 : 0) + (rightVisible ? 1 : 0);
+        NSInteger docsDividerIndex = visibleBeforeDocs - 1;
+        if (width > 1.0 && docsDividerIndex >= 0) {
+            [self.splitViewController.splitView setPosition:(width - docsWidth) ofDividerAtIndex:docsDividerIndex];
         }
     }
     if (self.graphicsPaneVisible && self.replPaneVisible) {
@@ -2258,6 +2174,7 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 - (BOOL)applyLayoutPreset:(MacSchemeLayoutPreset)preset {
     CGFloat mainRatio = self.savedMainSplitRatio > 0.0 ? self.savedMainSplitRatio : kMacSchemeBalancedMainRatio;
     CGFloat rightRatio = self.savedRightSplitRatio > 0.0 ? self.savedRightSplitRatio : kMacSchemeBalancedRightRatio;
+    CGFloat docsRatio = self.savedDocsSplitRatio > 0.0 ? self.savedDocsSplitRatio : kMacSchemeDocsPaneRatio;
 
     switch (preset) {
         case MacSchemeLayoutPresetBalanced:
@@ -2300,14 +2217,15 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 
     self.savedMainSplitRatio = ClampSplitRatio(mainRatio);
     self.savedRightSplitRatio = ClampSplitRatio(rightRatio);
-    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio];
+    self.savedDocsSplitRatio = ClampSplitRatio(docsRatio);
+    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio docsRatio:self.savedDocsSplitRatio];
     self.currentLayoutPreset = preset;
     [self updateLayoutMenuState];
     return YES;
 }
 
 - (BOOL)setPane:(MacSchemePane)pane visible:(BOOL)visible {
-    if (pane < MacSchemePaneEditor || pane > MacSchemePaneGraphics) return NO;
+    if (pane < MacSchemePaneEditor || pane > MacSchemePaneDocs) return NO;
     if ([self isPaneVisible:pane] == visible) return YES;
     if (!visible && [self visiblePaneCount] <= 1) return NO;
 
@@ -2316,9 +2234,10 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
         case MacSchemePaneEditor: self.editorPaneVisible = visible; break;
         case MacSchemePaneRepl: self.replPaneVisible = visible; break;
         case MacSchemePaneGraphics: self.graphicsPaneVisible = visible; break;
+        case MacSchemePaneDocs: self.docsPaneVisible = visible; break;
     }
 
-    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio];
+    [self applyPaneVisibilityWithMainRatio:self.savedMainSplitRatio rightRatio:self.savedRightSplitRatio docsRatio:self.savedDocsSplitRatio];
     self.currentLayoutPreset = [self derivedLayoutPreset];
     [self updateLayoutMenuState];
     return YES;
@@ -2331,7 +2250,7 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 
 - (void)toggleLayoutPane:(id)sender {
     NSInteger tag = [sender respondsToSelector:@selector(tag)] ? [sender tag] : -1;
-    if (tag < MacSchemePaneEditor || tag > MacSchemePaneGraphics) return;
+    if (tag < MacSchemePaneEditor || tag > MacSchemePaneDocs) return;
     BOOL visible = [self isPaneVisible:(MacSchemePane)tag];
     [self setPane:(MacSchemePane)tag visible:!visible];
 }
@@ -2453,10 +2372,11 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 
 - (void)showSchemeHelp:(id)sender {
     (void)sender;
-    if (!gMacSchemeHelpController) {
-        gMacSchemeHelpController = [[MacSchemeHelpWindowController alloc] init];
-    }
+    [self setPane:MacSchemePaneDocs visible:YES];
     [gMacSchemeHelpController showHomePage];
+    if (gMacSchemeHelpController.webView) {
+        [self.window makeFirstResponder:gMacSchemeHelpController.webView];
+    }
 }
 
 - (void)showSchemeHelpHome:(id)sender {
@@ -2466,12 +2386,14 @@ int64_t macscheme_layout_pane_visible(int64_t pane) {
 - (void)showSchemeHelpBack:(id)sender {
     (void)sender;
     if (!gMacSchemeHelpController) return;
+    [self setPane:MacSchemePaneDocs visible:YES];
     [gMacSchemeHelpController navigateBack];
 }
 
 - (void)showSchemeHelpForward:(id)sender {
     (void)sender;
     if (!gMacSchemeHelpController) return;
+    [self setPane:MacSchemePaneDocs visible:YES];
     [gMacSchemeHelpController navigateForward];
 }
 
@@ -2612,6 +2534,7 @@ static void *scheme_thread_entry(void *arg) {
     AddMenuItem(layoutMenu, @"Show Editor", @selector(toggleLayoutPane:), @"e", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneEditor;
     AddMenuItem(layoutMenu, @"Show REPL", @selector(toggleLayoutPane:), @"r", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneRepl;
     AddMenuItem(layoutMenu, @"Show Graphics", @selector(toggleLayoutPane:), @"g", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneGraphics;
+    AddMenuItem(layoutMenu, @"Show Docs", @selector(toggleLayoutPane:), @"d", NSEventModifierFlagCommand | NSEventModifierFlagOption, self).tag = MacSchemePaneDocs;
     [layoutMenu addItem:[NSMenuItem separatorItem]];
     AddMenuItem(layoutMenu, @"Reset Layout", @selector(resetLayout:), @"0", NSEventModifierFlagCommand, self);
 
@@ -2901,6 +2824,9 @@ static void *scheme_thread_entry(void *arg) {
     graphicsView.layer.backgroundColor = NSColor.blackColor.CGColor;
     graphicsVC.view = graphicsView;
 
+    gMacSchemeHelpController = [[MacSchemeHelpPaneController alloc] init];
+    NSViewController *docsVC = gMacSchemeHelpController;
+
     // Register this pane as the host for the real BASIC graphics renderer.
     gfx_set_host_view((__bridge void *)graphicsView);
 
@@ -2916,10 +2842,13 @@ static void *scheme_thread_entry(void *arg) {
     self.splitViewController.splitView.vertical = YES;
     self.editorSplitItem = [NSSplitViewItem splitViewItemWithViewController:editorVC];
     self.rightSplitItem = [NSSplitViewItem splitViewItemWithViewController:self.rightSplitController];
+    self.docsSplitItem = [NSSplitViewItem splitViewItemWithViewController:docsVC];
     self.editorSplitItem.minimumThickness = 320.0;
     self.rightSplitItem.minimumThickness = 280.0;
+    self.docsSplitItem.minimumThickness = 320.0;
     [self.splitViewController addSplitViewItem:self.editorSplitItem];
     [self.splitViewController addSplitViewItem:self.rightSplitItem];
+    [self.splitViewController addSplitViewItem:self.docsSplitItem];
 
     self.splitViewController.view.frame = NSMakeRect(0, 0, initialContentSize.width, initialContentSize.height);
     self.rightSplitController.view.frame = NSMakeRect(0, 0, initialContentSize.width * 0.4, initialContentSize.height);
@@ -2930,9 +2859,11 @@ static void *scheme_thread_entry(void *arg) {
     [self.window layoutIfNeeded];
     self.savedMainSplitRatio = kMacSchemeBalancedMainRatio;
     self.savedRightSplitRatio = kMacSchemeBalancedRightRatio;
+    self.savedDocsSplitRatio = kMacSchemeDocsPaneRatio;
     self.editorPaneVisible = YES;
     self.replPaneVisible = YES;
     self.graphicsPaneVisible = YES;
+    self.docsPaneVisible = NO;
     [self applyLayoutPreset:MacSchemeLayoutPresetBalanced];
     [self.window makeKeyAndOrderFront:nil];
     [self.window orderFrontRegardless];

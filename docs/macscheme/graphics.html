@@ -63,6 +63,142 @@
       <li>Call <code>gfx-flip</code> after updating the frame you want shown.</li>
     </ul>
 
+    <h2>Indexed colour and palettes</h2>
+    <p>The framebuffer is palette-driven. Most drawing functions take a colour index, not direct RGB values. That means you can redraw a scene once, then change how it looks by editing palette entries instead of repainting every pixel.</p>
+
+    <div class="panel">
+      <h2>Default palette range</h2>
+      <p>MacScheme ships with a practical default palette in the higher slots, especially indexes <code>16</code> through <code>31</code>. Those are the values most examples use for backgrounds, highlights, warm accents, and text.</p>
+      <pre>(gfx-reset)
+(gfx-pal 19 90 140 220)
+(gfx-pal 20 180 220 255)
+(gfx-pal 24 255 200 96)
+
+(gfx-rect 0 0 320 240 19)
+(gfx-circle 160 120 40 24 #t)
+(gfx-flip)</pre>
+      <ul>
+        <li><code>gfx-pal</code> rewrites a global palette entry with RGB values from <code>0</code> to <code>255</code>.</li>
+        <li><code>gfx-reset</code> restores the palette and clears the current target, which is useful before starting a new visual style.</li>
+        <li>Changing one palette slot updates every pixel that already uses that index.</li>
+      </ul>
+    </div>
+
+    <h2>Line palettes</h2>
+    <p>You can override palette entries for individual scanlines. This is a lightweight way to create horizon shifts, water bands, sky ramps, or heat-haze style colour transitions without copying buffers around.</p>
+    <pre>(gfx-reset)
+(gfx-rect 0 0 320 240 19)
+
+; Give colour 19 a darker top and brighter lower half.
+(gfx-line-pal 40 19 40 60 90)
+(gfx-line-pal 120 19 90 140 220)
+(gfx-line-pal 180 19 140 180 255)
+
+(gfx-flip)</pre>
+    <ul>
+      <li><code>gfx-line-pal</code> changes one palette index on one line.</li>
+      <li>For larger bands, apply a loop across a range of rows.</li>
+      <li>This is ideal when the shape stays fixed but the colour treatment needs to vary vertically.</li>
+    </ul>
+
+    <div class="panel">
+      <h2>Gradients and animated palette effects</h2>
+      <p>MacScheme also supports time-based palette programs. These effects run by rewriting palette entries over time, which is a classic retro technique for water shimmer, neon pulsing, warning lights, and sky cycling.</p>
+      <pre>; Create a line gradient for one palette slot.
+(gfx-pal-gradient 0 19 0 159 10 20 50 120 180 255)
+
+; Cycle a palette range back and forth.
+(gfx-pal-cycle 1 24 31 2 1)
+
+; Fade one colour between two RGB endpoints.
+(gfx-pal-fade 2 20 3 60 80 140 180 220 255)
+
+; Pulse a highlight colour.
+(gfx-pal-pulse 3 24 4 255 180 90 255 255 210)
+
+; Strobe a colour on and off.
+(gfx-pal-strobe 4 30 8 8 255 255 255 40 40 60)</pre>
+      <ul>
+        <li><code>gfx-pal-gradient</code> interpolates one palette entry over a line range.</li>
+        <li><code>gfx-pal-cycle</code> and <code>gfx-pal-cycle-lines</code> rotate palette entries for flowing effects.</li>
+        <li><code>gfx-pal-fade</code> and <code>gfx-pal-fade-lines</code> move one entry between two colours.</li>
+        <li><code>gfx-pal-pulse</code> and <code>gfx-pal-strobe</code> are good for highlights, hazard lights, and UI emphasis.</li>
+        <li>Use <code>gfx-pal-stop</code>, <code>gfx-pal-stop-all</code>, <code>gfx-pal-pause</code>, and <code>gfx-pal-resume</code> to manage running effects.</li>
+      </ul>
+    </div>
+
+    <h2>Practical palette workflow</h2>
+    <ul>
+      <li>Pick a small set of colour indexes for a scene, then tune those entries with <code>gfx-pal</code> until the look feels right.</li>
+      <li>Use line palettes or gradients to avoid repainting large sky or background areas every frame.</li>
+      <li>Use palette cycling and pulsing when the artwork is static but you want motion in lava, stars, console lights, or energy bars.</li>
+      <li>Keep effect slots organized by role, for example slot <code>0</code> for gradients, slot <code>1</code> for water, slot <code>2</code> for warning flashes.</li>
+    </ul>
+
+    <div class="panel">
+      <h2>Small scene demos</h2>
+      <p>These are compact palette-first recipes you can paste into the REPL. They assume a <code>320×240</code> screen and use palette changes for most of the look.</p>
+
+      <h3>Sky</h3>
+      <pre>(gfx-screen 320 240 1)
+(gfx-reset)
+(gfx-rect 0 0 320 240 19)
+(gfx-pal-gradient 0 19 0 159 16 28 72 120 190 255)
+(gfx-pal-gradient 1 20 160 239 255 180 96 255 110 72)
+(gfx-circle 250 56 18 20 #t)
+(gfx-rect 0 160 320 80 17)
+(gfx-flip)</pre>
+      <p>A single background colour becomes a sky ramp, and a second palette slot gives the sun and horizon a warmer band.</p>
+
+      <h3>Water</h3>
+      <pre>(gfx-screen 320 240 1)
+(gfx-reset)
+(gfx-rect 0 0 320 240 17)
+(gfx-rect 0 110 320 130 19)
+(gfx-pal-gradient 0 19 110 239 10 30 70 60 170 255)
+(gfx-pal-cycle-lines 1 19 130 239 2 1)
+(gfx-cycle #t)
+(gfx-flip)</pre>
+      <p>This keeps the geometry static and puts the motion into the lower scanlines by cycling the water colour treatment over time.</p>
+
+      <h3>Lava</h3>
+      <pre>(gfx-screen 320 240 1)
+(gfx-reset)
+(gfx-rect 0 0 320 240 18)
+(gfx-rect 0 150 320 90 24)
+(gfx-pal 24 255 120 20)
+(gfx-pal 25 255 200 40)
+(gfx-pal 26 255 255 180)
+(gfx-pal-cycle 2 24 26 2 1)
+(gfx-pal-pulse 3 26 3 255 220 120 255 255 210)
+(gfx-cycle #t)
+(gfx-flip)</pre>
+      <p>Three hot palette entries and a pulse on the brightest one are enough to get an active molten strip without repainting the whole surface.</p>
+    </div>
+
+    <h2>Sprite effects</h2>
+    <p>Sprites sit on top of the indexed-colour graphics layer, but they also expose higher-level visual treatments for emphasis and polish.</p>
+    <pre>(gfx-sprite-glow player 4 1.8 255 180 90)
+(gfx-sprite-outline player 2 255 255 255)
+(gfx-sprite-shadow player 3 3 0 0 0 160)
+(gfx-sprite-tint player 0.5 120 200 255)
+(gfx-sprite-flash player 8 255 255 255)</pre>
+    <ul>
+      <li><code>gfx-sprite-glow</code> adds a soft halo around an instance.</li>
+      <li><code>gfx-sprite-outline</code> helps sprites read against noisy backgrounds.</li>
+      <li><code>gfx-sprite-shadow</code> gives depth and separation.</li>
+      <li><code>gfx-sprite-tint</code> and <code>gfx-sprite-flash</code> are useful for power-ups, damage, and hit feedback.</li>
+      <li><code>gfx-sprite-fx-off</code> removes active sprite-side effects.</li>
+    </ul>
+
+    <h2>Where to look in examples</h2>
+    <ul>
+      <li><code>examples/sky_palette_demo.ss</code>, <code>examples/water_palette_demo.ss</code>, and <code>examples/lava_palette_demo.ss</code> are small focused palette demos that mirror the recipes on this page.</li>
+      <li>The starfield demos adjust palette entries directly to shape the look of stars and depth bands.</li>
+      <li>The game input demo shows glow treatment on a sprite instance.</li>
+      <li>The sprite guide covers the instance lifecycle once you move from pure framebuffer drawing into animated objects.</li>
+    </ul>
+
     <h2>Next step</h2>
     <p>When you want moving objects, reusable images, or animation state, continue to the <a href="sprites.html">Sprites guide</a>.</p>
   </main>

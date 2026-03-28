@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacScheme Audio and Music</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --card: #192029;
+      --fg: #eef2f7;
+      --muted: #9db0c3;
+      --accent: #68b5ff;
+      --accent2: #8df0c8;
+      --border: #2b3744;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: linear-gradient(180deg, #0d1117, #111922 45%, #101419); color: var(--fg); }
+    main { max-width: 920px; margin: 0 auto; padding: 40px 24px 72px; }
+    a { color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent2); font-size: 0.82rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 8px 0 14px; font-size: 2.2rem; }
+    h2 { margin-top: 30px; }
+    p, li { color: var(--muted); line-height: 1.65; }
+    code { color: var(--fg); background: rgba(255,255,255,0.06); padding: 0.1rem 0.35rem; border-radius: 6px; }
+    .panel { padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: rgba(25, 32, 41, 0.92); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); margin-top: 20px; }
+    pre { overflow-x: auto; background: rgba(0,0,0,0.24); padding: 14px; border-radius: 12px; border: 1px solid var(--border); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="../index.html">← Back to Help Home</a>
+    <div class="eyebrow">MacScheme Guide</div>
+    <h1>Audio and Music</h1>
+    <p>MacScheme exposes two audio layers to Scheme: <code>sound-*</code> for generated effects and <code>music-*</code> for ABC-based music playback and rendering. The fastest way to get results is to generate or load an asset once, then trigger playback explicitly when you need it.</p>
+
+    <div class="panel">
+      <h2>Quick start</h2>
+      <pre>(audio-init)
+
+(define coin (sound-coin 1.1 0.10))
+(sound-play coin)
+
+(define theme
+  (abc
+    "X:1"
+    "T:Menu Theme"
+    "M:4/4"
+    "L:1/8"
+    "Q:1/4=144"
+    "K:C"
+    "C2 E2 G2 c2 | b2 a2 g2 e2 |"))
+
+(music-play theme)</pre>
+      <ul>
+        <li><code>audio-init</code> is optional, but it gives deterministic startup.</li>
+        <li><code>sound-*</code> constructors return sound ids. Call <code>sound-play</code> to actually hear them.</li>
+        <li><code>music-play</code> accepts ABC text directly for quick experiments.</li>
+        <li><code>audio-stop-all</code> stops both sound effects and music.</li>
+      </ul>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Sound effects</h2>
+        <p>Use the built-in generators for arcade-style effects, UI clicks, pickups, zaps, and explosions.</p>
+        <pre>(define laser (sound-shoot 0.8 0.12))
+(sound-play laser 0.9 -0.2)
+
+(define hit (sound-hurt 0.7 0.15))
+(sound-play hit)</pre>
+        <ul>
+          <li>Built-ins include <code>sound-coin</code>, <code>sound-jump</code>, <code>sound-shoot</code>, <code>sound-explode</code>, <code>sound-click</code>, and more.</li>
+          <li>Use <code>sound-stop-one</code>, <code>sound-free</code>, and <code>sound-export-wav</code> when you need more control.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Custom synthesis</h2>
+        <p>When you want a more specific tone, build it directly with waveform, filter, or FM parameters.</p>
+        <pre>(define tone (sound-tone 440 0.25 'square))
+(define note (sound-note 64 0.4 'saw 0.01 0.08 0.5 0.12))
+(define filtered
+  (sound-filter-tone 220 0.5 'saw 'lowpass 1200 0.8))</pre>
+        <ul>
+          <li>Waveforms: <code>'sine</code>, <code>'square</code>, <code>'saw</code>, <code>'triangle</code>, <code>'noise</code>, <code>'pulse</code>.</li>
+          <li>Filters: <code>'none</code>, <code>'lowpass</code>, <code>'highpass</code>, <code>'bandpass</code>.</li>
+        </ul>
+      </section>
+    </div>
+
+    <h2>ABC music in one minute</h2>
+    <p>MacScheme’s music layer uses ABC notation, a compact text format for melodies, rhythm, and metadata. For quick sketches, you usually only need a handful of fields:</p>
+    <ul>
+      <li><code>X:</code> reference number</li>
+      <li><code>T:</code> title</li>
+      <li><code>M:</code> meter, such as <code>4/4</code></li>
+      <li><code>L:</code> default note length</li>
+      <li><code>Q:</code> tempo</li>
+      <li><code>K:</code> key signature</li>
+    </ul>
+
+    <div class="panel">
+      <h2>Minimal ABC example</h2>
+      <pre>(define phrase
+  (abc
+    "X:1"
+    "T:Phrase"
+    "M:4/4"
+    "L:1/8"
+    "Q:1/4=120"
+    "K:C"
+    "C2 D2 E2 G2 | A2 G2 E2 D2 |"))
+
+(music-play phrase 0.8)</pre>
+      <p>Uppercase letters are notes in the middle register. Numbers after a note extend its duration. Bars are separated with <code>|</code>.</p>
+    </div>
+
+    <h2>ABC player workflow</h2>
+    <ul>
+      <li>Use <code>music-play</code> when you want to audition a phrase or loop immediately.</li>
+      <li>Use <code>music-load</code> when you want to compile once and replay by id many times.</li>
+      <li>Use <code>music-render</code> when you want ABC-authored material to become a reusable sound asset.</li>
+    </ul>
+
+    <div class="panel">
+      <h2>Load, replay, and export</h2>
+      <pre>(define theme-id (music-load theme))
+(music-play-id theme-id)
+
+(define sting (music-render theme))
+(sound-play sting)
+
+(music-export-midi theme-id "theme.mid")
+(music-render-wav theme "theme.wav")</pre>
+      <ul>
+        <li><code>music-pause</code>, <code>music-resume</code>, <code>music-stop</code>, and <code>music-volume</code> control playback.</li>
+        <li><code>music-title</code>, <code>music-tempo</code>, and related queries let you inspect loaded music data.</li>
+      </ul>
+    </div>
+
+    <h2>Examples</h2>
+    <ul>
+      <li>Load <code>examples/sound_demo.ss</code> for generated effects.</li>
+      <li>Load <code>examples/music_demo.ss</code> for ABC playback.</li>
+      <li>Load <code>examples/music_render_demo.ss</code> for rendering music into reusable sound data.</li>
+    </ul>
+  </main>
+</body>
+</html>
