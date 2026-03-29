@@ -2,6 +2,8 @@
 
 Part of the Unplug and code series of compiler projects.
 
+![MacScheme selfie](Selfie.png)
+
 
 Welcome to **MacScheme**! This project transforms your modern Mac into a dedicated, 1980s-style Scheme workstation. 
 
