@@ -23,7 +23,7 @@ MacScheme wouldn't be possible without **Chez Scheme**. Chez Scheme is an incred
 
 ## offline docs, from Chez Scheme 
 
-You could lean scheme from reading the Scheme books, offline, and try the examples, no internet necessary.
+You could learn scheme from reading the Scheme books, offline, and try the examples, no internet necessary.
 
 ## Building on macOS
 
@@ -41,7 +41,7 @@ To build MacScheme from source, you will need macOS and the [Zig compiler](https
    zig build
    ```
 
-   On Intel Macs, Homebrew's `chezscheme` formula installs the exact static archives this project expects. If `MacScheme/lib/intel64` is empty, you can populate it with:
+   Homebrew's `chezscheme` formula installs the exact static archives this project expects. If `MacScheme/lib/xxxxxx` is empty, you can populate it with:
    ```bash
    brew install chezscheme
    cp "$(brew --prefix chezscheme)"/lib/csv*/ta6osx/libkernel.a MacScheme/lib/intel64/
@@ -56,11 +56,18 @@ To build MacScheme from source, you will need macOS and the [Zig compiler](https
    ./package.sh intel64
    ```
 
+   The arm64 version has its own folders as well.
+
+
 3. Alternatively, to build, package the macOS `.app` bundle, and deep-sign it, you can run the provided packaging scripts in the root directory:
    ```bash
    ./package.sh
    ./run.sh
    ```
+
+ Intel performance gap  
+
+Some Intel Macs have challenges with some of the graphics blitting instructions, which needs further investigation.
 
 ## Getting Started
 
