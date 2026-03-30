@@ -2485,6 +2485,7 @@ static void *scheme_thread_entry(void *arg) {
     [mainMenu addItem:fileRoot];
     NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
     [fileRoot setSubmenu:fileMenu];
+    AddMenuItem(fileMenu, @"New", @selector(newDocument:), @"n", NSEventModifierFlagCommand, self);
     AddMenuItem(fileMenu, @"Open…", @selector(openDocument:), @"o", NSEventModifierFlagCommand, self);
     AddMenuItem(fileMenu, @"Save", @selector(saveDocument:), @"s", NSEventModifierFlagCommand, self);
     AddMenuItem(fileMenu, @"Save As…", @selector(saveDocumentAs:), @"S", NSEventModifierFlagCommand | NSEventModifierFlagShift, self);
@@ -2562,6 +2563,10 @@ static void *scheme_thread_entry(void *arg) {
     AddMenuItem(wideModesMenu, @"720 × 480", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(720, 480);
     AddMenuItem(wideModesMenu, @"800 × 450", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(800, 450);
     AddMenuItem(wideModesMenu, @"854 × 480", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(854, 480);
+    AddMenuItem(wideModesMenu, @"960 × 540", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(960, 540);
+    AddMenuItem(wideModesMenu, @"1024 × 576", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(1024, 576);
+    AddMenuItem(wideModesMenu, @"1280 × 720", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(1280, 720);
+    AddMenuItem(wideModesMenu, @"1920 × 1080", @selector(selectGraphicsMode:), @"", 0, self).tag = MacSchemeGraphicsModeTag(1920, 1080);
 
     NSMenuItem *themeRoot = [[NSMenuItem alloc] initWithTitle:@"Theme" action:nil keyEquivalent:@""];
     [mainMenu addItem:themeRoot];
@@ -2627,6 +2632,11 @@ static void *scheme_thread_entry(void *arg) {
     }
     [self focusEditorGrid];
     grid_on_key_down(0, keyCode, modifiers);
+}
+
+- (void)newDocument:(id)sender {
+    (void)sender;
+    [self newEditorFile];
 }
 
 - (void)openDocument:(id)sender {
@@ -3141,6 +3151,26 @@ static void *scheme_thread_entry(void *arg) {
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     (void)sender;
     return YES;
+}
+
+- (void)newEditorFile {
+    if ([self.window isDocumentEdited]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:@"You have unsaved changes. Are you sure you want to create a new file?"];
+        [alert setInformativeText:@"Your changes will be lost if you don't save them."];
+        [alert addButtonWithTitle:@"Create New"];
+        [alert addButtonWithTitle:@"Cancel"];
+        if ([alert runModal] != NSAlertFirstButtonReturn) {
+            return;
+        }
+    }
+    
+    grid_replace_text(0, (const uint8_t *)"", 0);
+    grid_set_editor_file_path((const uint8_t *)"", 0);
+    [self.window setTitle:@"MacScheme"];
+    [self.window setRepresentedFilename:@""];
+    grid_set_editor_modified(0);
+    [self.window setDocumentEdited:NO];
 }
 
 - (void)openEditorFile {

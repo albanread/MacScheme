@@ -1154,7 +1154,7 @@ export fn gfx_sprite_load(id: f64, desc: ?*const anyopaque) callconv(.c) void {
     const compressed = file_data[offset .. offset + compressed_size];
     const pixel_count: u32 = @as(u32, width) * @as(u32, height);
 
-    var pixel_buf: [256 * 256]u8 = undefined;
+    var pixel_buf: [@as(usize, sprite.MAX_SPRITE_SIZE) * @as(usize, sprite.MAX_SPRITE_SIZE)]u8 = undefined;
     if (pixel_count > pixel_buf.len) return;
 
     // Zig 0.15: use std.compress.flate with Container.zlib

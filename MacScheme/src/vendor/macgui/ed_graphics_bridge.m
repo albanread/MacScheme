@@ -497,7 +497,7 @@ typedef struct {
 #define SPRITE_ATLAS_ENTRY_SIZE  32
 #define SPRITE_INSTANCE_SIZE     80
 #define SPRITE_PALETTE_SIZE      64   // 16 * 4 bytes (RGBA32)
-#define SPRITE_STAGING_SIZE  (256 * 256)  // max single sprite pixels
+#define SPRITE_STAGING_SIZE  (512 * 512)  // max single sprite pixels
 
 // ─── Forward Declarations ───────────────────────────────────────────────────
 

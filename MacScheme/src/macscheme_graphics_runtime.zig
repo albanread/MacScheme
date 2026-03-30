@@ -546,7 +546,7 @@ fn toF64ClampedSpriteInstance(value: i64) f64 {
 }
 
 fn toF64ClampedSpriteSize(value: i64) f64 {
-    return @floatFromInt(@max(0, @min(256, value)));
+    return @floatFromInt(@max(0, @min(512, value)));
 }
 
 fn toF64ClampedSpritePaletteIndex(value: i64) f64 {

@@ -14,10 +14,10 @@
            (dx 2.4)
            (dy 1.7))
   (gfx-clear 6 10 22)
-  (gfx-rect 0 118 256 42 26)
-  (gfx-rect 0 0 256 18 17)
+  (gfx-rect 0 118 256 42 10)
+  (gfx-rect 0 0 256 18 4)
   (gfx-text 8 4 "MacScheme Bounce Demo" 21)
-  (gfx-text-small 8 138 "watch the framebuffer redraw each frame" 30)
+  (gfx-text-small 8 138 "watch the framebuffer redraw" 30)
 
   (do ((i 0 (+ i 1)))
       ((= i 8))

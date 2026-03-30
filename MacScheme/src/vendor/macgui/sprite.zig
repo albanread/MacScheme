@@ -23,7 +23,7 @@ const RGBA32 = gfx.RGBA32;
 
 pub const MAX_DEFINITIONS: u16 = 1024;
 pub const MAX_INSTANCES: u16 = 512;
-pub const MAX_SPRITE_SIZE: u16 = 256;
+pub const MAX_SPRITE_SIZE: u16 = 512;
 pub const MAX_PALETTES: u16 = 1024;
 pub const SPRITE_PALETTE_ENTRIES: u8 = 16;
 pub const ATLAS_SIZE: u16 = 2048;

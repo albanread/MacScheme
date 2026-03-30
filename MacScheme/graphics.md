@@ -280,6 +280,9 @@ The sprite system sits alongside the framebuffer API.
 
 - `(gfx-sprite-def id w h)`
   - Creates an empty sprite definition.
+  - **Both `w` and `h` are hard-clamped to 512 by the engine.** Any value larger
+    than 512 is silently truncated to 512. This applies to multi-frame animation
+    strips too — the total canvas width (`fw * count`) must not exceed 512.
 
 - `(gfx-sprite-data id x y colour-index)`
   - Sets one pixel in the CPU-side definition staging buffer.
@@ -301,6 +304,19 @@ The sprite system sits alongside the framebuffer API.
 
 - `(gfx-sprite-frames id fw fh count)`
   - Declares frame dimensions and frame count for an animation strip.
+  - The sprite definition must have been created with `(gfx-sprite-def id total-w h)`
+    where `total-w = fw * count`. The engine clamps sprite dimensions to
+    **512 pixels**, so the maximum usable strip width is 512. For example, a 48-pixel-wide
+    sprite can have at most **10 frames** (10 × 48 = 480 ≤ 512).
+  - Recommended formula: `count = floor(512 / fw)`.
+  - Example — 9-frame 48×48 UFO rotation strip:
+    ```scheme
+    (gfx-sprite-def 1 432 48)   ; 9 × 48 = 432, safely within 512
+    (with-sprite-canvas 1
+      ...draw each frame at x-offset (* frame-index 48)...)
+    (gfx-sprite-frames 1 48 48 9)
+    (gfx-sprite-animate inst 0.15)
+    ```
 
 - `(gfx-sprite-set-frame frame)`
   - Selects the active frame viewport while drawing inside a sprite canvas.
@@ -416,7 +432,37 @@ Row-oriented example:
   - Clears sprite effects.
 
 - `(gfx-sprite-pal-override inst def-id)`
-  - Makes an instance use another definition's palette.
+  - Makes an instance use another definition's palette instead of its own.
+  - **Colour variant technique:** to create multiple colour variants of the same
+    sprite without duplicating pixel data, define lightweight 1×1 "palette holder"
+    definitions that exist only to carry a palette slot, then point each instance
+    at a different holder. This is efficient — no extra atlas space is used for
+    pixels and instances that share the same definition still render from a single
+    copy of the artwork. Example — four differently-coloured UFOs sharing one
+    animation strip:
+    ```scheme
+    ;; Def 1: full 9-frame UFO strip (432×48)
+    (gfx-sprite-def 1 432 48)
+    (with-sprite-canvas 1 ... draw all frames ...)
+    (gfx-sprite-palette 1 2 155 72 218) ; default: purple
+
+    ;; Palette holders — 1×1 transparent, palette only
+    (gfx-sprite-def 2 1 1) (with-sprite-canvas 2 (gfx-cls 0))
+    (gfx-sprite-palette 2 2 210 40 40)  ; red fire variant
+
+    (gfx-sprite-def 3 1 1) (with-sprite-canvas 3 (gfx-cls 0))
+    (gfx-sprite-palette 3 2 30 160 30)  ; acid green variant
+
+    ;; Instances all reference def 1 for geometry …
+    (gfx-sprite 1 1 860.0 96.0)
+    (gfx-sprite 2 1 1060.0 172.0)
+    (gfx-sprite 3 1 1280.0 118.0)
+    (gfx-sprite-frames 1 48 48 8)
+
+    ;; … but instances 2 and 3 use a different palette slot
+    (gfx-sprite-pal-override 2 2)  ; instance 2 → red palette
+    (gfx-sprite-pal-override 3 3)  ; instance 3 → green palette
+    ```
 
 - `(gfx-sprite-pal-reset inst)`
   - Restores the instance to its own definition palette.

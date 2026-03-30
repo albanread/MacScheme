@@ -334,9 +334,9 @@
           (any-ship-collision? ship-x ship-y (cdr asteroids)))))
 
 (define (draw-hud score lives cooldown game-over?)
-  (gfx-rect 0 0 640 36 21)
-  (gfx-text 12 10 "MacScheme Asteroids" 21)
-  (gfx-text-small 230 12 "Left/Right turn  Up thrust  Space fire  Esc quit" 30)
+  (gfx-rect 0 0 640 36 4)
+  (gfx-text 12 10 "MacScheme Asteroids" 3)
+  (gfx-text-small 230 12 "Left/Right turn  Up thrust  Space fire  Esc quit" 5)
   (gfx-text-small 12 340
                   (string-append "score " (number->string score)
                                  "   lives " (number->string lives)
