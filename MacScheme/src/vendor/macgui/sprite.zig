@@ -527,6 +527,11 @@ pub const SpriteBank = struct {
         const def = &self.definitions[id];
         if (!def.active) return;
         if (frame_w == 0 or frame_h == 0 or count == 0) return;
+        if (frame_w > def.width or frame_h > def.height) return;
+
+        const max_frames_per_row: u32 = def.width / frame_w;
+        if (max_frames_per_row == 0) return;
+        if (@as(u32, count) > max_frames_per_row) return;
 
         def.frame_count = count;
         def.frame_w = frame_w;

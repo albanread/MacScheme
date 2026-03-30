@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const max_sprite_size: usize = 512;
+
 extern fn ed_graphics_init() callconv(.c) void;
 extern fn gfx_screen(width: f64, height: f64, scale: f64) callconv(.c) void;
 extern fn gfx_screen_close() callconv(.c) void;
@@ -341,7 +343,7 @@ pub export fn macscheme_gfx_sprite_row_ascii(row: i64, text: [*:0]const u8) call
         return;
     }
 
-    var pixels: [256]u8 = undefined;
+    var pixels: [max_sprite_size]u8 = undefined;
     const count = @min(source.len, pixels.len);
     for (source[0..count], 0..) |ch, index| {
         pixels[index] = spriteAsciiToPaletteIndex(ch);
@@ -546,7 +548,7 @@ fn toF64ClampedSpriteInstance(value: i64) f64 {
 }
 
 fn toF64ClampedSpriteSize(value: i64) f64 {
-    return @floatFromInt(@max(0, @min(512, value)));
+    return @floatFromInt(@max(0, @min(max_sprite_size, value)));
 }
 
 fn toF64ClampedSpritePaletteIndex(value: i64) f64 {
